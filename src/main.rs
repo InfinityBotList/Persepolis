@@ -2,6 +2,7 @@ use log::{info, error};
 use sqlx::postgres::PgPoolOptions;
 
 mod config;
+mod checks;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -99,7 +100,8 @@ async fn main() {
             },
             //listener: |event, _ctx, user_data| Box::pin(event_listener(event, user_data)),
             commands: vec![
-                register()
+                register(),
+                checks::test(),
             ],
             /// This code is run before every command
             pre_command: |ctx| {
