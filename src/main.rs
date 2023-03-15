@@ -1,3 +1,6 @@
+use log::{info, error};
+use sqlx::postgres::PgPoolOptions;
+
 mod config;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -8,23 +11,84 @@ pub struct Data {
     pool: sqlx::PgPool,
 }
 
+#[poise::command(prefix_command)]
+async fn register(ctx: Context<'_>) -> Result<(), Error> {
+    poise::builtins::register_application_commands_buttons(ctx).await?;
+    Ok(())
+}
+
+async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
+    // This is our custom error handler
+    // They are many errors that can occur, so we only handle the ones we want to customize
+    // and forward the rest to the default handler
+    match error {
+        poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
+        poise::FrameworkError::Command { error, ctx } => {
+            error!("Error in command `{}`: {:?}", ctx.command().name, error,);
+            let err = ctx
+                .say(format!(
+                    "There was an error running this command: {}",
+                    error
+                ))
+                .await;
+
+            if let Err(e) = err {
+                error!("SQLX Error: {}", e);
+            }
+        }
+        poise::FrameworkError::CommandCheckFailed { error, ctx } => {
+            error!(
+                "[Possible] error in command `{}`: {:?}",
+                ctx.command().name,
+                error,
+            );
+            if let Some(error) = error {
+                error!("Error in command `{}`: {:?}", ctx.command().name, error,);
+                let err = ctx
+                    .say(format!(
+                        "Whoa there, do you have permission to do this?: {}",
+                        error
+                    ))
+                    .await;
+
+                if let Err(e) = err {
+                    error!("Error while sending error message: {}", e);
+                }
+            } else {
+                let err = ctx
+                    .say("You don't have permission to do this but we couldn't figure out why...")
+                    .await;
+
+                if let Err(e) = err {
+                    error!("Error while sending error message: {}", e);
+                }
+            }
+        }
+        error => {
+            if let Err(e) = poise::builtins::on_error(error).await {
+                error!("Error while handling error: {}", e);
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     const MAX_CONNECTIONS: u32 = 3; // max connections to the database, we don't need too many here
 
-    std::env::set_var("RUST_LOG", "bot=info");
+    std::env::set_var("RUST_LOG", "persepolis=info");
 
     env_logger::init();
 
     info!("Proxy URL: {}", config::CONFIG.proxy_url);
 
-    let http = serenity::HttpBuilder::new(&config::CONFIG.token)
+    let http = serenity::all::HttpBuilder::new(&config::CONFIG.token)
         .proxy(config::CONFIG.proxy_url.clone())
         .ratelimiter_disabled(true)
         .build();
 
     let client_builder =
-        serenity::ClientBuilder::new_with_http(http, serenity::GatewayIntents::all());
+        serenity::all::ClientBuilder::new_with_http(http, serenity::all::GatewayIntents::all());
 
     let framework = poise::Framework::new(
         poise::FrameworkOptions {
@@ -33,33 +97,9 @@ async fn main() {
                 prefix: Some("ibb!".into()),
                 ..poise::PrefixFrameworkOptions::default()
             },
-            listener: |event, _ctx, user_data| Box::pin(event_listener(event, user_data)),
+            //listener: |event, _ctx, user_data| Box::pin(event_listener(event, user_data)),
             commands: vec![
-                age(),
-                register(),
-                help::simplehelp(),
-                help::help(),
-                explain::explainme(),
-                staff::staff(),
-                testing::onboard(),
-                testing::invite(),
-                testing::claim(),
-                testing::claim_context(),
-                testing::unclaim(),
-                testing::unclaim_context(),
-                testing::queue(),
-                testing::approve(),
-                testing::deny(),
-                testing::staffguide(),
-                admin::onboardman(),
-                admin::rpcunlock(),
-                admin::rpclock(),
-                admin::updprod(),
-                admin::uninvitedbots(),
-                stats::stats(),
-                botowners::getbotroles(),
-                rpc::command::rpc(),
-                todo::todo(),
+                register()
             ],
             /// This code is run before every command
             pre_command: |ctx| {
@@ -86,13 +126,9 @@ async fn main() {
             on_error: |error| Box::pin(on_error(error)),
             ..Default::default()
         },
-        move |ctx, _ready, _framework| {
+        move |_ctx, _ready, _framework| {
             Box::pin(async move {
                 Ok(Data {
-                    cache_http: CacheHttpImpl {
-                        cache: ctx.cache.clone(),
-                        http: ctx.http.clone(),
-                    },
                     pool: PgPoolOptions::new()
                         .max_connections(MAX_CONNECTIONS)
                         .connect(&config::CONFIG.database_url)
