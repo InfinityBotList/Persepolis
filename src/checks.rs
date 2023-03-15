@@ -39,3 +39,7 @@ async fn onboardable(ctx: Context<'_>) -> Result<bool, Error> {
 pub async fn test(_ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
+
+async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
+    Ok(true)
+}

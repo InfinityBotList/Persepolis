@@ -3,6 +3,8 @@ use sqlx::postgres::PgPoolOptions;
 
 mod config;
 mod checks;
+mod help;
+mod states;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -95,13 +97,15 @@ async fn main() {
         poise::FrameworkOptions {
             initialize_owners: true,
             prefix_options: poise::PrefixFrameworkOptions {
-                prefix: Some("ibb!".into()),
+                prefix: Some("ibo!".into()),
                 ..poise::PrefixFrameworkOptions::default()
             },
             //listener: |event, _ctx, user_data| Box::pin(event_listener(event, user_data)),
             commands: vec![
                 register(),
                 checks::test(),
+                help::help(),
+                help::simplehelp(),
             ],
             /// This code is run before every command
             pre_command: |ctx| {
