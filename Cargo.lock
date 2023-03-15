@@ -1140,6 +1140,7 @@ dependencies = [
  "log",
  "once_cell",
  "poise",
+ "rand",
  "serde",
  "serde_yaml",
  "serenity",

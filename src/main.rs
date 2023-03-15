@@ -5,6 +5,8 @@ mod config;
 mod checks;
 mod help;
 mod states;
+mod crypto;
+mod setup;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -49,17 +51,9 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
                 error!("Error in command `{}`: {:?}", ctx.command().name, error,);
                 let err = ctx
                     .say(format!(
-                        "Whoa there, do you have permission to do this?: {}",
+                        "**{}**",
                         error
                     ))
-                    .await;
-
-                if let Err(e) = err {
-                    error!("Error while sending error message: {}", e);
-                }
-            } else {
-                let err = ctx
-                    .say("You don't have permission to do this but we couldn't figure out why...")
                     .await;
 
                 if let Err(e) = err {
@@ -103,7 +97,8 @@ async fn main() {
             //listener: |event, _ctx, user_data| Box::pin(event_listener(event, user_data)),
             commands: vec![
                 register(),
-                checks::test(),
+                checks::test_onboardable(),
+                checks::test_can_onboard(),
                 help::help(),
                 help::simplehelp(),
             ],

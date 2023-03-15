@@ -21,6 +21,7 @@ futures-util = "0.3"
 indexmap = { version = "1.9.1", features = ["serde"] }
 strum = "0.24"
 strum_macros = "0.24"
+rand = "0.8"
 
 [dependencies.tokio]
 version = "1"
