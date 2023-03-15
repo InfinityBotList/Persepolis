@@ -1,0 +1,7 @@
+/target
+**/.env
+**/.vscode
+persepolis/persepolis
+persepolis/persepolis.new
+**/config.yaml
+**/config.yaml.sample
