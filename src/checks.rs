@@ -5,7 +5,7 @@ use sqlx::types::chrono;
 
 use crate::{Context, Error, config, states, setup::setup_guild};
 
-async fn onboardable(ctx: Context<'_>) -> Result<bool, Error> {
+pub async fn onboardable(ctx: Context<'_>) -> Result<bool, Error> {
     let row = sqlx::query!(
         "SELECT staff FROM users WHERE user_id = $1",
         ctx.author().id.to_string()
@@ -38,7 +38,7 @@ async fn onboardable(ctx: Context<'_>) -> Result<bool, Error> {
     }
 }
 
-async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
+pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
     let state = sqlx::query!(
         "SELECT staff_onboard_state, staff_onboard_last_start_time, staff_onboard_guild FROM users WHERE user_id = $1",
         ctx.author().id.to_string()
