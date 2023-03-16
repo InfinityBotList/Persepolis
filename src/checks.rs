@@ -91,6 +91,10 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
             .await?;
 
             setup_guild(ctx, &mut msg).await?;
+
+            Ok(false)
+        } else {
+            Ok(true)
         }
     } else if state.staff_onboard_guild.is_some() {
         // Check that bot is still in guild
@@ -136,6 +140,8 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
             .await?;
 
             setup_guild(ctx, &mut msg).await?;
+
+            return Ok(false);
         }
 
         if guild_id != ctx.guild_id().ok_or("This command must be ran in a server!")? {
@@ -147,6 +153,8 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
                     ctx.author().id
                 ).into());
         }
+
+        Ok(false)
     } else {
         // Create a new server
         let mut msg = ctx.send(
@@ -172,9 +180,9 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
         .await?;
 
         setup_guild(ctx, &mut msg).await?;
-    }
 
-    Ok(true)
+        Ok(false)
+    }
 }
 
 #[poise::command(prefix_command, check = "onboardable")]
