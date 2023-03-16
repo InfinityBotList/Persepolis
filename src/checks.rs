@@ -3,7 +3,7 @@ use std::{str::FromStr, num::NonZeroU64};
 use poise::{serenity_prelude::{RoleId, GuildId, CreateEmbed}, CreateReply};
 use sqlx::types::chrono;
 
-use crate::{Context, Error, config, states, setup::setup_guild};
+use crate::{Context, Error, config, states, setup::{setup_guild, delete_or_leave_guild, create_invite}};
 
 pub async fn onboardable(ctx: Context<'_>) -> Result<bool, Error> {
     let row = sqlx::query!(
@@ -78,26 +78,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
             if state.staff_onboard_guild.is_some() {
                 let guild_id = GuildId(state.staff_onboard_guild.ok_or("Invalid guild ID")?.parse::<NonZeroU64>()?);
 
-                // Since Guild is not Send, it needs to be block-scoped explicitly
-                let mut is_owner = false;
-
-                {
-                    let guild = ctx.discord()
-                        .cache
-                        .guild(guild_id);
-
-                    if let Some(guild) = guild {
-                        is_owner = guild.owner_id == ctx.discord().cache.current_user().id;
-                    }
-                }
-
-                if is_owner {
-                    // Owner, so delete
-                    ctx.discord().http.delete_guild(guild_id).await?;
-                } else {
-                    // We're not owner, so we need to leave
-                    ctx.discord().http.leave_guild(guild_id).await?;
-                }
+                delete_or_leave_guild(ctx, guild_id).await?;
             }
 
             // Reset to pending
@@ -155,6 +136,16 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
             .await?;
 
             setup_guild(ctx, msg).await?;
+        }
+
+        if guild_id != ctx.guild_id().ok_or("This command must be ran in a server!")? {
+            // They're not in the right guild, so we need to ask them to move
+            let invite_link = create_invite(ctx, guild_id).await?;
+            return Err(
+                format!(
+                    "You are not in the correct guild! CLick here to join/move to the right server: <{}>,",
+                    invite_link
+                ).into());
         }
     } else {
         // Create a new server
