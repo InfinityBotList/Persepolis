@@ -92,11 +92,11 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
 
             setup_guild(ctx, &mut msg).await?;
 
-            Ok(false)
-        } else {
-            Ok(true)
+            return Ok(false);
         }
-    } else if state.staff_onboard_guild.is_some() {
+    }
+    
+    if state.staff_onboard_guild.is_some() {
         // Check that bot is still in guild
         let guild_id = GuildId(state.staff_onboard_guild.ok_or("Invalid guild ID")?.parse::<NonZeroU64>()?);
 
