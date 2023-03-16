@@ -92,7 +92,12 @@ async fn confirm_login(
     .await
     .map_err(|_| ServerError::Error("Could not send request to get access token".to_string()))?
     .error_for_status()
-    .map_err(|_| ServerError::Error("Invalid code".to_string()))?;
+    .map_err(|e| ServerError::Error(
+      format!(
+        "Could not get access token: {}",
+        e
+      )
+    ))?;
 
     let access_token = access_token.json::<AccessToken>().await.map_err(|_| ServerError::Error("Could not deserialize response".to_string()))?;
 
