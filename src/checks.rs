@@ -3,7 +3,7 @@ use std::{str::FromStr, num::NonZeroU64};
 use poise::{serenity_prelude::{RoleId, GuildId, CreateEmbed}, CreateReply};
 use sqlx::types::chrono;
 
-use crate::{Context, Error, config, states, setup::{setup_guild, delete_or_leave_guild, create_invite}};
+use crate::{Context, Error, config, states, setup::{setup_guild, delete_or_leave_guild}};
 
 pub async fn onboardable(ctx: Context<'_>) -> Result<bool, Error> {
     let row = sqlx::query!(

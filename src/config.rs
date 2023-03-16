@@ -52,6 +52,7 @@ impl Default for Channels {
 #[derive(Serialize, Deserialize)]
 pub struct Config {
     pub database_url: String,
+    pub client_secret: String,
     pub token: String,
     pub servers: Servers,
     pub roles: Roles,
@@ -67,6 +68,7 @@ impl Default for Config {
         Self {
             database_url: String::from(""),
             token: String::from(""),
+            client_secret: String::from(""),
             servers: Servers::default(),
             roles: Roles::default(),
             channels: Channels::default(),

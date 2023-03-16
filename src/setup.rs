@@ -1,6 +1,6 @@
 use poise::serenity_prelude::{Message, GuildId, CreateChannel, CreateInvite};
 use serenity::json::json;
-use crate::{Context, Error, crypto::gen_random};
+use crate::{Context, Error, crypto::gen_random, cache::CacheHttpImpl};
 
 pub async fn setup_guild(ctx: Context<'_>, msg: Message) -> Result<(), Error> {
     let guild = ctx.discord().http.create_guild(&json!({
@@ -26,11 +26,11 @@ pub async fn setup_guild(ctx: Context<'_>, msg: Message) -> Result<(), Error> {
     Ok(())
 }
 
-pub async fn create_invite(ctx: Context<'_>, guild: GuildId) -> Result<String, Error> {
+pub async fn create_invite(cache_http: &CacheHttpImpl, guild: GuildId) -> Result<String, Error> {
     // Find the readme channel
     let mut readme_channel = None;
     {
-        let guild_cache = ctx.discord().cache.guild(guild).ok_or("Could not find the guild!")?;
+        let guild_cache = cache_http.cache.guild(guild).ok_or("Could not find the guild!")?;
 
         if let Some(chan) = guild_cache.channels.values().find(|c| c.name == "readme") {
             readme_channel = Some(chan.id);
@@ -38,7 +38,7 @@ pub async fn create_invite(ctx: Context<'_>, guild: GuildId) -> Result<String, E
     }
 
     if readme_channel.is_none() {
-        let new_readme_channel = guild.create_channel(&ctx.discord(), CreateChannel::new("readme")).await?;
+        let new_readme_channel = guild.create_channel(cache_http, CreateChannel::new("readme")).await?;
 
         readme_channel = Some(new_readme_channel.id);
     }
@@ -49,7 +49,7 @@ pub async fn create_invite(ctx: Context<'_>, guild: GuildId) -> Result<String, E
     .temporary(false)
     .unique(true);
 
-    let invite = readme_channel.ok_or("Could not unwrap readme channel")?.create_invite(&ctx.discord(), create_invite).await?;
+    let invite = readme_channel.ok_or("Could not unwrap readme channel")?.create_invite(cache_http, create_invite).await?;
 
     Ok(invite.url())
 }
