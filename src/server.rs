@@ -67,8 +67,7 @@ struct AccessToken {
 
 async fn confirm_login(
     State(app_state): State<Arc<AppState>>,
-    Query(code): Query<String>,
-    Query(state): Query<UserId>,
+    Query((code, state)): Query<(String, UserId)>,
 ) -> Result<Redirect, ServerError> {
     // Create access token from code
     let client = reqwest::Client::new();

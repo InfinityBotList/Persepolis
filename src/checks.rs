@@ -148,7 +148,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
             // They're not in the right guild, so we need to ask them to move
             return Err(
                 format!(
-                    "You are not in the correct guild! Go to {}/{}>,",
+                    "You are not in the correct guild! Go to {}/{}",
                     config::CONFIG.persepolis_domain,
                     ctx.author().id
                 ).into());
