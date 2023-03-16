@@ -59,6 +59,7 @@ pub struct Config {
     pub test_bot: NonZeroU64,
     pub frontend_url: String,
     pub proxy_url: String,
+    pub persepolis_domain: String,
 }
 
 impl Default for Config {
@@ -72,6 +73,7 @@ impl Default for Config {
             test_bot: NonZeroU64::new(990885577979224104).unwrap(),
             frontend_url: String::from("https://infinitybots.gg"),
             proxy_url: String::from("http://127.0.0.1:3219"),
+            persepolis_domain: String::from("https://persepolis.infinitybots.gg"),
         }
     }
 }

@@ -18,7 +18,7 @@ cross:
 	DATABASE_URL=$(DATABASE_URL) CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$(CARGO_TARGET_GNU_LINKER) cargo build --target=x86_64-unknown-linux-gnu --release ${ARGS}
 push:
 	# Kill arcadia
-	ssh root@$(HOST) "systemctl stop persepolis"
+	#ssh root@$(HOST) "systemctl stop persepolis"
 
 	@for bin in $(BINS) ; do \
 		echo "Pushing $$bin to $(HOST):${PROJ_NAME}/$$bin"; \
@@ -26,7 +26,7 @@ push:
 	done
 
 	# Start arcadia
-	ssh root@$(HOST) "systemctl start arcpersepolisadia"
+	#ssh root@$(HOST) "systemctl start persepolis"
 
 remote:
 	ssh root@$(HOST)

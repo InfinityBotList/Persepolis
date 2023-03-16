@@ -140,11 +140,11 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
 
         if guild_id != ctx.guild_id().ok_or("This command must be ran in a server!")? {
             // They're not in the right guild, so we need to ask them to move
-            let invite_link = create_invite(ctx, guild_id).await?;
             return Err(
                 format!(
-                    "You are not in the correct guild! CLick here to join/move to the right server: <{}>,",
-                    invite_link
+                    "You are not in the correct guild! Go to {}/{}>,",
+                    config::CONFIG.persepolis_domain,
+                    ctx.author().id
                 ).into());
         }
     } else {

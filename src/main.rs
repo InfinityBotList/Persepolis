@@ -1,5 +1,8 @@
 use log::{info, error};
+use poise::serenity_prelude::FullEvent;
 use sqlx::postgres::PgPoolOptions;
+
+use crate::cache::CacheHttpImpl;
 
 mod config;
 mod checks;
@@ -7,6 +10,8 @@ mod help;
 mod states;
 mod crypto;
 mod setup;
+mod cache;
+mod server;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -14,11 +19,40 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 // User data, which is stored and accessible in all command invocations
 pub struct Data {
     pool: sqlx::PgPool,
+    cache_http: cache::CacheHttpImpl,
 }
 
 #[poise::command(prefix_command)]
 async fn register(ctx: Context<'_>) -> Result<(), Error> {
     poise::builtins::register_application_commands_buttons(ctx).await?;
+    Ok(())
+}
+
+async fn event_listener(event: &FullEvent, user_data: &Data) -> Result<(), Error> {
+    match event {
+        FullEvent::InteractionCreate {
+            interaction,
+            ctx: _,
+        } => {
+            info!("Interaction received: {:?}", interaction.id());
+        },
+        FullEvent::Ready {
+            data_about_bot,
+            ctx: _,
+        } => {
+            info!(
+                "{} is ready! Doing some minor DB fixes",
+                data_about_bot.user.name
+            );
+
+            tokio::task::spawn(server::setup_server(
+                user_data.pool.clone(),
+                user_data.cache_http.clone(),
+            ));
+        },
+        _ => {}
+    }
+
     Ok(())
 }
 
@@ -94,7 +128,7 @@ async fn main() {
                 prefix: Some("ibo!".into()),
                 ..poise::PrefixFrameworkOptions::default()
             },
-            //listener: |event, _ctx, user_data| Box::pin(event_listener(event, user_data)),
+            listener: |event, _ctx, user_data| Box::pin(event_listener(event, user_data)),
             commands: vec![
                 register(),
                 checks::test_onboardable(),
@@ -127,14 +161,19 @@ async fn main() {
             on_error: |error| Box::pin(on_error(error)),
             ..Default::default()
         },
-        move |_ctx, _ready, _framework| {
+        move |ctx, _ready, _framework| {
             Box::pin(async move {
                 Ok(Data {
+                    cache_http: CacheHttpImpl {
+                        cache: ctx.cache.clone(),
+                        http: ctx.http.clone(),
+                    },
                     pool: PgPoolOptions::new()
                         .max_connections(MAX_CONNECTIONS)
                         .connect(&config::CONFIG.database_url)
                         .await
                         .expect("Could not initialize connection"),
+                    
                 })
             })
         },
