@@ -65,9 +65,15 @@ struct AccessToken {
     access_token: String,
 }
 
+#[derive(Deserialize)]
+struct ConfirmLogin {
+    code: String,
+    state: UserId,
+}
+
 async fn confirm_login(
     State(app_state): State<Arc<AppState>>,
-    Query((code, state)): Query<(String, UserId)>,
+    data: Query<ConfirmLogin>,
 ) -> Result<Redirect, ServerError> {
     // Create access token from code
     let client = reqwest::Client::new();
@@ -78,7 +84,7 @@ async fn confirm_login(
             "client_id": app_state.cache_http.cache.current_user().id.to_string(),
             "client_secret": config::CONFIG.client_secret,
             "grant_type": "authorization_code",
-            "code": code,
+            "code": data.code,
             "redirect_uri": format!("{}/confirm-login", config::CONFIG.persepolis_domain),
         })
     )
@@ -101,7 +107,7 @@ async fn confirm_login(
 
     let user = user.json::<serenity::model::user::User>().await.map_err(|_| ServerError::Error("Could not deserialize response".to_string()))?;
 
-    if user.id != state {
+    if user.id != data.state {
         // Check if admin
         let staff = sqlx::query!("SELECT admin FROM users WHERE user_id = $1", user.id.to_string())
         .fetch_one(&app_state.pool)
@@ -113,7 +119,7 @@ async fn confirm_login(
         }
     }
 
-    let staff_onboard_guild = sqlx::query!("SELECT staff_onboard_guild FROM users WHERE user_id = $1", state.to_string())
+    let staff_onboard_guild = sqlx::query!("SELECT staff_onboard_guild FROM users WHERE user_id = $1", data.state.to_string())
     .fetch_one(&app_state.pool)
     .await
     .map_err(|_| ServerError::Error("Could not get user from database".to_string()))?;
