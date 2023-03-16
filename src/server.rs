@@ -55,7 +55,7 @@ async fn create_login(
     Path(uid): Path<UserId>,
 ) -> Redirect {
     // Redirect user to the login page
-    let url = format!("https://discord.com/api/oauth2/authorize?client_id={}&redirect_uri={}/confirm-login&scope={}&state={}", app_state.cache_http.cache.current_user().id, config::CONFIG.persepolis_domain, "identify", uid);
+    let url = format!("https://discord.com/api/oauth2/authorize?client_id={}&redirect_uri={}/confirm-login&scope={}&state={}&response_type=code", app_state.cache_http.cache.current_user().id, config::CONFIG.persepolis_domain, "identify", uid);
 
     Redirect::temporary(&url)
 }
