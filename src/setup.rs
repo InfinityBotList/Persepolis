@@ -57,6 +57,7 @@ pub async fn create_invite(cache_http: &CacheHttpImpl, guild: GuildId) -> Result
 pub async fn delete_or_leave_guild(ctx: Context<'_>, guild: GuildId) -> Result<(), Error> {
     // Since Guild is not Send, it needs to be block-scoped explicitly
     let mut is_owner = false;
+    let mut is_in_guild = false;
 
     {
         let guild = ctx.discord()
@@ -64,8 +65,14 @@ pub async fn delete_or_leave_guild(ctx: Context<'_>, guild: GuildId) -> Result<(
             .guild(guild);
 
         if let Some(guild) = guild {
+            is_in_guild = true;
             is_owner = guild.owner_id == ctx.discord().cache.current_user().id;
-        }
+        } 
+    }
+
+    if !is_in_guild {
+        // We're not in the guild, so we can't do anything
+        return Ok(());
     }
 
     if is_owner {
