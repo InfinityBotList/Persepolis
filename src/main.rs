@@ -12,6 +12,7 @@ mod crypto;
 mod setup;
 mod cache;
 mod server;
+mod guilds;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -135,6 +136,7 @@ async fn main() {
                 checks::test_can_onboard(),
                 help::help(),
                 help::simplehelp(),
+                guilds::guild(),
             ],
             /// This code is run before every command
             pre_command: |ctx| {

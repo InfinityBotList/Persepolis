@@ -5,6 +5,21 @@ use sqlx::types::chrono;
 
 use crate::{Context, Error, config, states, setup::{setup_guild, delete_or_leave_guild}};
 
+pub async fn is_admin(ctx: Context<'_>) -> Result<bool, Error> {
+    let row = sqlx::query!(
+        "SELECT admin FROM users WHERE user_id = $1",
+        ctx.author().id.to_string()
+    )
+    .fetch_one(&ctx.data().pool)
+    .await?;
+
+    if row.admin {
+        Ok(true)
+    } else {
+        Err("You are not an admin".into())
+    }
+}
+
 pub async fn onboardable(ctx: Context<'_>) -> Result<bool, Error> {
     let row = sqlx::query!(
         "SELECT staff FROM users WHERE user_id = $1",
@@ -154,7 +169,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
                 ).into());
         }
 
-        Ok(false)
+        Ok(true)
     } else {
         // Create a new server
         let mut msg = ctx.send(
