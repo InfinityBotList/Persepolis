@@ -78,7 +78,7 @@ async fn confirm_login(
     // Create access token from code
     let client = reqwest::Client::new();
 
-    let access_token = client.post("https://discord.com/api/v10/token")
+    let access_token = client.post("https://discord.com/api/v10/oauth2/token")
     .form(
         &json!({
             "client_id": app_state.cache_http.cache.current_user().id.to_string(),
