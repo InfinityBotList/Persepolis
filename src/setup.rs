@@ -1,8 +1,8 @@
-use poise::serenity_prelude::{Message, GuildId, CreateChannel, CreateInvite};
+use poise::serenity_prelude::{Message, GuildId, CreateChannel, CreateInvite, EditMessage, CreateEmbed, CreateActionRow, CreateButton};
 use serenity::json::json;
-use crate::{Context, Error, crypto::gen_random, cache::CacheHttpImpl};
+use crate::{Context, Error, crypto::gen_random, cache::CacheHttpImpl, config};
 
-pub async fn setup_guild(ctx: Context<'_>, msg: Message) -> Result<(), Error> {
+pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Error> {
     let guild = ctx.discord().http.create_guild(&json!({
         "name": "IBLO-".to_string() + &gen_random(6),
         "channels": [
@@ -22,6 +22,36 @@ pub async fn setup_guild(ctx: Context<'_>, msg: Message) -> Result<(), Error> {
     )
     .execute(&ctx.data().pool)
     .await?;
+
+    // Edit message embed
+    msg.edit(
+        &ctx.discord(), 
+        EditMessage::new()
+        .embed(
+            CreateEmbed::new()
+            .title("Onboarding Notice")
+            .description(
+                ":green_circle: **Created onboarding server, now click the 'Join' button to get started!**"
+            )
+            .color(serenity::model::Color::RED)
+        )
+        .components(
+            vec![
+                CreateActionRow::Buttons(
+                    vec![
+                        CreateButton::new_link(
+                            format!(
+                                "{}/{}",
+                                config::CONFIG.persepolis_domain,
+                                ctx.author().id
+                            )
+                        )
+                        .label("Join")
+                    ]
+                )
+            ]
+        )
+    ).await?;
 
     Ok(())
 }

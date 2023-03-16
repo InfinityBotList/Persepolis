@@ -60,7 +60,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
         if last_start_time.timestamp() + 3600 < chrono::Utc::now().timestamp() {
             // They need to redo onboarding again... wipe their old progress and restart
 
-            let msg = ctx.send(
+            let mut msg = ctx.send(
                 CreateReply::new()
                 .embed(
                     CreateEmbed::new()
@@ -90,7 +90,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
             .execute(&ctx.data().pool)
             .await?;
 
-            setup_guild(ctx, msg).await?;
+            setup_guild(ctx, &mut msg).await?;
         }
     } else if state.staff_onboard_guild.is_some() {
         // Check that bot is still in guild
@@ -113,7 +113,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
 
         if !in_guild {
             // Create a new server
-            let msg = ctx.send(
+            let mut msg = ctx.send(
                 CreateReply::new()
                 .embed(
                     CreateEmbed::new()
@@ -135,7 +135,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
             .execute(&ctx.data().pool)
             .await?;
 
-            setup_guild(ctx, msg).await?;
+            setup_guild(ctx, &mut msg).await?;
         }
 
         if guild_id != ctx.guild_id().ok_or("This command must be ran in a server!")? {
@@ -149,7 +149,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
         }
     } else {
         // Create a new server
-        let msg = ctx.send(
+        let mut msg = ctx.send(
             CreateReply::new()
             .embed(
                 CreateEmbed::new()
@@ -171,7 +171,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
         .execute(&ctx.data().pool)
         .await?;
 
-        setup_guild(ctx, msg).await?;
+        setup_guild(ctx, &mut msg).await?;
     }
 
     Ok(true)
