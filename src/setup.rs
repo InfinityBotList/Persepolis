@@ -4,14 +4,7 @@ use crate::{Context, Error, crypto::gen_random, cache::CacheHttpImpl, config};
 
 pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Error> {
     let guild = ctx.discord().http.create_guild(&json!({
-        "name": "IBLO-".to_string() + &gen_random(6),
-        "channels": [
-            {
-                "name": "readme",
-                "type": 0,
-                "topic": "It is recommended that you read this channel before doing anything else."
-            }
-        ]
+        "name": "IBLO-".to_string() + &gen_random(6)
     })).await?;
 
     // Update DB
@@ -68,7 +61,11 @@ pub async fn create_invite(cache_http: &CacheHttpImpl, guild: GuildId) -> Result
     }
 
     if readme_channel.is_none() {
-        let new_readme_channel = guild.create_channel(cache_http, CreateChannel::new("readme")).await?;
+        let new_readme_channel = guild.create_channel(
+            cache_http, 
+            CreateChannel::new("readme")
+            .topic("It is recommended that you read this channel before doing anything else.")
+        ).await?;
 
         new_readme_channel.say(
             cache_http,
