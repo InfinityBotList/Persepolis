@@ -14,6 +14,7 @@ mod cache;
 mod server;
 mod guilds;
 mod stats;
+mod cmds;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
