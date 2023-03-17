@@ -1,6 +1,8 @@
+use std::{time::Duration, num::NonZeroU64};
+
 use log::{info, error};
-use poise::serenity_prelude::FullEvent;
-use sqlx::postgres::PgPoolOptions;
+use poise::serenity_prelude::{FullEvent, GuildId};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 
 use crate::cache::CacheHttpImpl;
 
@@ -28,34 +30,6 @@ pub struct Data {
 #[poise::command(prefix_command)]
 async fn register(ctx: Context<'_>) -> Result<(), Error> {
     poise::builtins::register_application_commands_buttons(ctx).await?;
-    Ok(())
-}
-
-async fn event_listener(event: &FullEvent, user_data: &Data) -> Result<(), Error> {
-    match event {
-        FullEvent::InteractionCreate {
-            interaction,
-            ctx: _,
-        } => {
-            info!("Interaction received: {:?}", interaction.id());
-        },
-        FullEvent::Ready {
-            data_about_bot,
-            ctx: _,
-        } => {
-            info!(
-                "{} is ready! Doing some minor DB fixes",
-                data_about_bot.user.name
-            );
-
-            tokio::task::spawn(server::setup_server(
-                user_data.pool.clone(),
-                user_data.cache_http.clone(),
-            ));
-        },
-        _ => {}
-    }
-
     Ok(())
 }
 
@@ -106,6 +80,110 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     }
 }
 
+async fn event_listener(event: &FullEvent, user_data: &Data) -> Result<(), Error> {
+    match event {
+        FullEvent::InteractionCreate {
+            interaction,
+            ctx: _,
+        } => {
+            info!("Interaction received: {:?}", interaction.id());
+        },
+        FullEvent::GuildMemberAddition { ctx: _, new_member } => {
+            info!("New member: {}", new_member.user.name);
+
+            // Check guild first
+            if new_member.guild_id == config::CONFIG.servers.main || new_member.guild_id == config::CONFIG.servers.staff {
+                return Ok(());
+            }
+
+            // Otherwise, we have work to do
+
+            // Query optional
+            let guild = sqlx::query!(
+                "SELECT user_id FROM users WHERE staff_onboard_guild = $1",
+                new_member.guild_id.to_string()
+            )
+            .fetch_optional(&user_data.pool)
+            .await?;
+
+            if let Some(g) = guild {
+                if g.user_id == new_member.user.id.to_string() {
+                    // We have a match on the user, give them their admin role
+                    setup::promote_user(&user_data.cache_http, new_member.guild_id, new_member.user.id).await?;
+                }
+            } else {
+                setup::delete_or_leave_guild(&user_data.cache_http, new_member.guild_id).await?;
+            }
+        }
+        FullEvent::Ready {
+            data_about_bot,
+            ctx: _,
+        } => {
+            info!(
+                "{} is ready! Doing some minor DB fixes",
+                data_about_bot.user.name
+            );
+
+            tokio::task::spawn(server::setup_server(
+                user_data.pool.clone(),
+                user_data.cache_http.clone(),
+            ));
+
+            tokio::task::spawn(clean_out(
+                user_data.pool.clone(),
+                user_data.cache_http.clone(),
+            ));
+        },
+        _ => {}
+    }
+
+    Ok(())
+}
+
+async fn clean_out(
+    pool: PgPool, 
+    cache_http: CacheHttpImpl
+) -> ! {
+    let mut interval = tokio::time::interval(Duration::from_secs(30));
+    loop {
+        interval.tick().await;
+
+        if let Err(e) = clean_out_impl(&pool, &cache_http).await {
+            error!("Error while cleaning out: {}", e);
+        }
+    }
+}
+
+async fn clean_out_impl(
+    pool: &PgPool,
+    cache_http: &CacheHttpImpl
+) -> Result<(), Error> {
+    let staff_onboard_guilds = sqlx::query!(
+        "
+SELECT staff_onboard_guild FROM users
+WHERE staff_onboard_guild IS NOT NULL AND (
+-- Case 1: Not complete (!= $1) but has been more than one hour
+(staff_onboard_state != $1 AND staff_onboard_last_start_time < NOW() - INTERVAL '1 hour')
+-- Case 2: Complete ($1) but has been more than 1 month
+OR (staff_onboard_state = $1 AND staff_onboard_last_start_time < NOW() - INTERVAL '1 month')
+)
+        ",
+        states::OnboardState::Completed.to_string()
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for guild in staff_onboard_guilds {
+        if let Some(guild_id) = guild.staff_onboard_guild {
+            let guild = GuildId(guild_id.parse::<NonZeroU64>()?);
+
+            setup::delete_or_leave_guild(cache_http, guild).await?;
+        }
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     const MAX_CONNECTIONS: u32 = 3; // max connections to the database, we don't need too many here
@@ -140,6 +218,10 @@ async fn main() {
                 help::simplehelp(),
                 guilds::guild(),
                 stats::stats(),
+                cmds::claim(),
+                cmds::unclaim(),
+                cmds::approve(),
+                cmds::deny(),
             ],
             /// This code is run before every command
             pre_command: |ctx| {

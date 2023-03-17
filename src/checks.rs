@@ -93,7 +93,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
             if state.staff_onboard_guild.is_some() {
                 let guild_id = GuildId(state.staff_onboard_guild.ok_or("Invalid guild ID")?.parse::<NonZeroU64>()?);
 
-                delete_or_leave_guild(ctx, guild_id).await?;
+                delete_or_leave_guild(&ctx.data().cache_http, guild_id).await?;
             }
 
             // Reset to pending

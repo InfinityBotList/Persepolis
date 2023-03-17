@@ -1,4 +1,5 @@
 use once_cell::sync::Lazy;
+use poise::serenity_prelude::GuildId;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Write, num::NonZeroU64};
 
@@ -9,15 +10,15 @@ pub static CONFIG: Lazy<Config> = Lazy::new(|| Config::load().expect("Failed to 
 
 #[derive(Serialize, Deserialize)]
 pub struct Servers {
-    pub main: NonZeroU64,
-    pub staff: NonZeroU64,
+    pub main: GuildId,
+    pub staff: GuildId,
 }
 
 impl Default for Servers {
     fn default() -> Self {
         Self {
-            main: NonZeroU64::new(758641373074423808).unwrap(),
-            staff: NonZeroU64::new(870950609291972618).unwrap(),
+            main: GuildId(NonZeroU64::new(758641373074423808).unwrap()),
+            staff: GuildId(NonZeroU64::new(870950609291972618).unwrap()),
         }
     }
 }
