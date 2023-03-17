@@ -13,6 +13,7 @@ mod setup;
 mod cache;
 mod server;
 mod guilds;
+mod stats;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -137,6 +138,7 @@ async fn main() {
                 help::help(),
                 help::simplehelp(),
                 guilds::guild(),
+                stats::stats(),
             ],
             /// This code is run before every command
             pre_command: |ctx| {
