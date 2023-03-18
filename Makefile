@@ -33,5 +33,5 @@ remote:
 up:
 	git submodule foreach git pull
 run:
-	-mv -vf persepolis/persepolis.new persepolis/persepolis # If it exists
-	./persepolis/persepolis
+	-mv -vf persepolis.new persepolis # If it exists
+	./persepolis
