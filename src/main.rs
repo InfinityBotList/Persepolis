@@ -88,33 +88,6 @@ async fn event_listener(event: &FullEvent, user_data: &Data) -> Result<(), Error
         } => {
             info!("Interaction received: {:?}", interaction.id());
         },
-        FullEvent::GuildMemberAddition { ctx: _, new_member } => {
-            info!("New member: {}", new_member.user.name);
-
-            // Check guild first
-            if new_member.guild_id == config::CONFIG.servers.main || new_member.guild_id == config::CONFIG.servers.staff {
-                return Ok(());
-            }
-
-            // Otherwise, we have work to do
-
-            // Query optional
-            let guild = sqlx::query!(
-                "SELECT user_id FROM users WHERE staff_onboard_guild = $1",
-                new_member.guild_id.to_string()
-            )
-            .fetch_optional(&user_data.pool)
-            .await?;
-
-            if let Some(g) = guild {
-                if g.user_id == new_member.user.id.to_string() {
-                    // We have a match on the user, give them their admin role
-                    setup::promote_user(&user_data.cache_http, new_member.guild_id, new_member.user.id).await?;
-                }
-            } else {
-                setup::delete_or_leave_guild(&user_data.cache_http, new_member.guild_id).await?;
-            }
-        }
         FullEvent::Ready {
             data_about_bot,
             ctx: _,

@@ -1,4 +1,4 @@
-use poise::serenity_prelude::{Message, GuildId, CreateChannel, CreateInvite, EditMessage, CreateEmbed, CreateActionRow, CreateButton, UserId, EditRole, permissions};
+use poise::serenity_prelude::{Message, GuildId, CreateChannel, EditMessage, CreateEmbed, CreateActionRow, CreateButton, EditRole, permissions, ChannelId, RoleId};
 use serenity::json::json;
 use crate::{Context, Error, crypto::gen_random, cache::CacheHttpImpl, config};
 
@@ -49,7 +49,8 @@ pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Erro
     Ok(())
 }
 
-pub async fn create_invite(cache_http: &CacheHttpImpl, guild: GuildId) -> Result<String, Error> {
+/// Setups up the readme returning the channel id
+pub async fn setup_readme(cache_http: &CacheHttpImpl, guild: GuildId) -> Result<ChannelId, Error> {
     // Find the readme channel
     let mut readme_channel = None;
     {
@@ -79,18 +80,11 @@ Welcome to your onboarding server! Please read the following:
         readme_channel = Some(new_readme_channel.id);
     }
 
-    let create_invite = CreateInvite::new()
-    .max_age(0)
-    .max_uses(0)
-    .temporary(false)
-    .unique(true);
-
-    let invite = readme_channel.ok_or("Could not unwrap readme channel")?.create_invite(cache_http, create_invite).await?;
-
-    Ok(invite.url())
+    Ok(readme_channel.ok_or("Could not find the readme channel!")?)
 }
 
-pub async fn promote_user(cache_http: &CacheHttpImpl, guild: GuildId, user: UserId) -> Result<(), Error> {
+/// Returns the onboard-user role
+pub async fn get_onboard_user_role(cache_http: &CacheHttpImpl, guild: GuildId) -> Result<RoleId, Error> {
     let mut admin_role = None;
 
     {
@@ -102,7 +96,7 @@ pub async fn promote_user(cache_http: &CacheHttpImpl, guild: GuildId, user: User
     }
 
     if let Some(role) = admin_role {
-        cache_http.http.add_member_role(guild, user, role, Some("Onboarder has joined")).await?;
+        Ok(role)
     } else {
         let new_role = guild.create_role(
             cache_http, 
@@ -111,10 +105,8 @@ pub async fn promote_user(cache_http: &CacheHttpImpl, guild: GuildId, user: User
             .permissions(permissions::Permissions::all())
         ).await?;
 
-        cache_http.http.add_member_role(guild, user, new_role.id, Some("Onboarder has joined [new role]")).await?;
+        Ok(new_role.id)
     }
-
-    Ok(())
 }
 
 pub async fn delete_or_leave_guild(cache_http: &CacheHttpImpl, guild: GuildId) -> Result<(), Error> {

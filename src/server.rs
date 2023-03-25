@@ -2,12 +2,12 @@ use std::{sync::Arc, num::NonZeroU64};
 
 use axum::{Router, routing::get, extract::{State, Path, Query}, response::{Redirect, IntoResponse, Response}, http::{StatusCode}};
 use log::info;
-use poise::serenity_prelude::{UserId, GuildId};
+use poise::serenity_prelude::{UserId, GuildId, AddMember};
 use serde::Deserialize;
 use sqlx::PgPool;
 use serenity::json::json;
 
-use crate::{cache::CacheHttpImpl, config, setup::create_invite};
+use crate::{cache::CacheHttpImpl, config, setup::{setup_readme, get_onboard_user_role}};
 
 pub struct AppState {
     pub cache_http: CacheHttpImpl,
@@ -55,7 +55,7 @@ async fn create_login(
     Path(uid): Path<UserId>,
 ) -> Redirect {
     // Redirect user to the login page
-    let url = format!("https://discord.com/api/oauth2/authorize?client_id={}&redirect_uri={}/confirm-login&scope={}&state={}&response_type=code", app_state.cache_http.cache.current_user().id, config::CONFIG.persepolis_domain, "identify", uid);
+    let url = format!("https://discord.com/api/oauth2/authorize?client_id={}&redirect_uri={}/confirm-login&scope={}&state={}&response_type=code", app_state.cache_http.cache.current_user().id, config::CONFIG.persepolis_domain, "identify guilds.join", uid);
 
     Redirect::temporary(&url)
 }
@@ -63,6 +63,7 @@ async fn create_login(
 #[derive(Deserialize)]
 struct AccessToken {
     access_token: String,
+    scope: String,
 }
 
 #[derive(Deserialize)]
@@ -124,16 +125,41 @@ async fn confirm_login(
         }
     }
 
+    if !access_token.scope.contains("guilds.join") {
+        return Err(ServerError::Error("Invalid scope. Scope must be exactly ".to_string()));
+    }
+
     let staff_onboard_guild = sqlx::query!("SELECT staff_onboard_guild FROM users WHERE user_id = $1", data.state.to_string())
     .fetch_one(&app_state.pool)
     .await
-    .map_err(|_| ServerError::Error("Could not get user from database".to_string()))?;
+    .map_err(|_| ServerError::Error("Could not get guild from database".to_string()))?;
 
     if let Some(staff_onboard_guild) = staff_onboard_guild.staff_onboard_guild {
         let guild_id = GuildId(staff_onboard_guild.parse::<NonZeroU64>().map_err(|_| ServerError::Error("Could not parse guild id".to_string()))?);
-        let invite_url = create_invite(&app_state.cache_http, guild_id).await.map_err(|_| ServerError::Error("Could not create invite".to_string()))?;
+        let channel_id = setup_readme(&app_state.cache_http, guild_id).await.map_err(|_| ServerError::Error("Could not create invite".to_string()))?;
 
-        Ok(Redirect::temporary(&invite_url))
+        let guild_url = format!("https://discord.com/channels/{}/{}", guild_id, channel_id);
+
+        // Check that theyre not already on the server
+        if app_state.cache_http.cache.member_field(guild_id, user.id, |m| m.user.id).is_some() {
+            Ok(Redirect::temporary(&guild_url))
+        } else {
+            // Add them to server first
+            let roles = if user.id == data.state {
+                vec![get_onboard_user_role(&app_state.cache_http, guild_id).await.map_err(|_| ServerError::Error("Could not get onboarding roles".to_string()))?]
+            } else {
+                vec![]
+            };
+
+            guild_id.add_member(
+                &app_state.cache_http.http, 
+                user.id, 
+                AddMember::new(access_token.access_token)
+                .roles(roles)
+            ).await.map_err(|_| ServerError::Error("Could not add you to the guild".to_string()))?;
+
+            Ok(Redirect::temporary(&guild_url))
+        }
     } else {
         Err(ServerError::Error("User has no staff onboard guild set".to_string()))
     }
