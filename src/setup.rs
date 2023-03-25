@@ -3,7 +3,7 @@ use serenity::json::json;
 use crate::{Context, Error, crypto::gen_random, cache::CacheHttpImpl, config};
 
 pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Error> {
-    if ctx.discord().cache.guilds().len() > 10 {
+    if ctx.discord().cache.guilds().len() >= 10 {
         return Err("Creating new guilds can only be done when the bot is in less than 10 guilds".into())
     }
 
