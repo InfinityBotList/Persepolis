@@ -20,7 +20,6 @@ struct EmbedHelp {
 }
 
 async fn _embed_help(
-    pctx: Context<'_>,
     ctx: poise::FrameworkContext<'_, Data, Error>,
 ) -> Result<Vec<EmbedHelp>, Error> {
     let mut categories = indexmap::IndexMap::<Option<&str>, Vec<&Command<Data, Error>>>::new();
@@ -42,28 +41,6 @@ async fn _embed_help(
         let mut menu = "".to_string();
         for command in commands {
             if command.hide_in_help {
-                continue;
-            }
-
-            let mut flag = true;
-
-            for check in command.checks.iter() {
-                let res = check(pctx).await;
-
-                // User may not run this command
-                if res.is_err() {
-                    continue;
-                }
-
-                let res = res.unwrap();
-
-                if !res {
-                    flag = false;
-                    break;
-                }
-            }
-
-            if !flag {
                 continue;
             }
 
@@ -243,7 +220,7 @@ async fn _help_send_index(
 
 #[poise::command(track_edits, prefix_command, slash_command)]
 pub async fn help(ctx: Context<'_>) -> Result<(), Error> {
-    let eh = _embed_help(ctx, ctx.framework()).await?;
+    let eh = _embed_help(ctx.framework()).await?;
 
     let msg = _help_send_index(Some(ctx), None, &ctx.discord().http, &eh, 0, None).await?;
 
