@@ -131,9 +131,9 @@ async fn clean_out_impl(
     pool: &PgPool,
     cache_http: &CacheHttpImpl
 ) -> Result<(), Error> {
-    let staff_onboard_guilds = sqlx::query!(
+    let rows = sqlx::query!(
         "
-SELECT staff_onboard_guild FROM users
+SELECT user_id, staff_onboard_guild FROM users
 WHERE staff_onboard_guild IS NOT NULL AND (
 -- Case 1: Not complete (!= $1) but has been more than one hour
 (staff_onboard_state != $1 AND staff_onboard_last_start_time < NOW() - INTERVAL '1 hour')
@@ -146,8 +146,16 @@ OR (staff_onboard_state = $1 AND staff_onboard_last_start_time < NOW() - INTERVA
     .fetch_all(pool)
     .await?;
 
-    for guild in staff_onboard_guilds {
-        if let Some(guild_id) = guild.staff_onboard_guild {
+    for row in rows {
+        sqlx::query!(
+            "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
+            states::OnboardState::Pending.to_string(),
+            row.user_id
+        )
+        .execute(pool)
+        .await?;
+
+        if let Some(guild_id) = row.staff_onboard_guild {
             let guild = GuildId(guild_id.parse::<NonZeroU64>()?);
 
             setup::delete_or_leave_guild(cache_http, guild).await?;
