@@ -191,6 +191,7 @@ async fn main() {
                 help::simplehelp(),
                 guilds::guild(),
                 stats::stats(),
+                cmds::queue(),
                 cmds::claim(),
                 cmds::unclaim(),
                 cmds::approve(),
