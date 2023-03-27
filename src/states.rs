@@ -5,7 +5,7 @@ use strum_macros::{Display, EnumString};
 pub enum OnboardState {
     Pending, // Needed
     Started,
-    QueueForceClaimed,
+    QueueRemindedReviewer,
     Claimed,
     PendingManagerReview, // Needed
     Denied, // Needed

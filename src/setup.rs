@@ -11,7 +11,21 @@ pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Erro
         "name": "IBLO-".to_string() + &gen_random(6)
     })).await?;
 
-    guild.id.edit_mfa_level(&ctx.discord().http, poise::serenity_prelude::MfaLevel::Elevated, Some("Onboarding prerequisite")).await?;
+    /*ctx.cache_and_http().http().edit_guild_mfa_level(
+        guild.id,
+        &json!({
+            "level": 1
+        }),
+        Some("Onboarding prerequisite")
+    )
+    .await
+    .map_err(|e| "Could not set MFA level:".to_string() + &e.to_string())?;*/
+
+    /*
+    guild.id.edit_mfa_level(&ctx.discord().http, poise::serenity_prelude::MfaLevel::Elevated, Some("Onboarding prerequisite"))
+    .await
+    .map_err(|e| "Could not set MFA level:".to_string() + &e.to_string())?;
+    */
 
     // Update DB
     sqlx::query!(

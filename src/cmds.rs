@@ -1,4 +1,4 @@
-use poise::{CreateReply, serenity_prelude::{CreateEmbed, Mentionable, CreateEmbedFooter}};
+use poise::{CreateReply, serenity_prelude::{CreateEmbed, Mentionable, CreateEmbedFooter, CreateActionRow, CreateButton}};
 
 use crate::{checks, Context, Error};
 
@@ -78,6 +78,49 @@ Since you seem new to this place, how about a nice look arou-?
             )
             .execute(&data.pool)
             .await?;
+
+            Ok(())
+        }
+        crate::states::OnboardState::Started | crate::states::OnboardState::QueueRemindedReviewer => {
+            let bot_name = {
+                data.cache_http.cache.user(crate::config::CONFIG.test_bot)
+                .ok_or("Bot not found")?
+                .name
+                .clone()
+            };
+
+
+            let bot_data = sqlx::query!(
+                "SELECT short, owner, invite FROM bots WHERE bot_id = $1",
+                crate::config::CONFIG.test_bot.to_string()
+            )
+            .fetch_one(&data.pool)
+            .await?;
+
+            let embed = CreateEmbed::new()
+            .title(bot_name.to_string() + " [Sandbox Mode]")
+            .field("ID", crate::config::CONFIG.test_bot.to_string(), false)
+            .field("Short", bot_data.short, false)
+            .field("Owner", bot_data.owner.ok_or("Test bot may only have a main owner!")?, false)
+            .field("Claimed by", "*You are free to test this bot. It is not claimed*", false)
+            .field("Approval Note", "Pls test me and make sure I work :heart:", true)
+            .field("Queue name", bot_name, true)
+            .field("Invite", format!("[Invite Bot]({})", bot_data.invite), true);
+
+            ctx.send(
+                CreateReply::new()
+                .embed(embed)
+                .components(
+                    vec![
+                        CreateActionRow::Buttons(
+                            vec![
+                                CreateButton::new_link(bot_data.invite).label("Invite"),
+                                CreateButton::new_link(format!("{}/bots/{}", crate::config::CONFIG.frontend_url, crate::config::CONFIG.test_bot)).label("View Page"),
+                            ]
+                        )
+                    ]
+                )
+            ).await?;
 
             Ok(())
         }

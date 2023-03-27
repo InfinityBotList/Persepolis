@@ -24,7 +24,6 @@ pub async fn stats(ctx: Context<'_>) -> Result<(), Error> {
                 GIT_SHA.to_string() + "(semver=" + GIT_SEMVER + ")",
                 true,
             )
-            //.field("Uptime", format!("{}", chrono::Duration::from_std(std::time::SystemTime::now().duration_since(start_time)).unwrap()), true)
             .field("Commit Message", GIT_COMMIT_MSG, true)
             .field("Built On", BUILD_CPU, true)
             .field("Cargo Profile", CARGO_PROFILE, true),

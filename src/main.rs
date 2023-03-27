@@ -97,6 +97,13 @@ async fn event_listener(event: &FullEvent, user_data: &Data) -> Result<(), Error
                 data_about_bot.user.name
             );
 
+            sqlx::query!(
+                "UPDATE bots SET type = 'testbot' WHERE bot_id = $1",
+                crate::config::CONFIG.test_bot.to_string()
+            )
+            .execute(&user_data.pool)
+            .await?;
+
             tokio::task::spawn(server::setup_server(
                 user_data.pool.clone(),
                 user_data.cache_http.clone(),
