@@ -10,6 +10,20 @@ use crate::{checks, Context, Error};
         check = "checks::can_onboard",
     )
 ]
+pub async fn start(ctx: Context<'_>) -> Result<(), Error> {
+    ctx.say("Whoa! You've already started lol").await?;
+    Ok(())
+}
+
+
+#[
+    poise::command(
+        prefix_command,
+        slash_command,
+        check = "checks::onboardable",
+        check = "checks::can_onboard",
+    )
+]
 pub async fn queue(ctx: Context<'_>) -> Result<(), Error> {
     let data = ctx.data();
 

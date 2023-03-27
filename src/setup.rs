@@ -11,6 +11,8 @@ pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Erro
         "name": "IBLO-".to_string() + &gen_random(6)
     })).await?;
 
+    guild.id.edit_mfa_level(&ctx.discord().http, poise::serenity_prelude::MfaLevel::Elevated, Some("Onboarding prerequisite")).await?;
+
     // Update DB
     sqlx::query!(
         "UPDATE users SET staff_onboard_guild = $1 WHERE user_id = $2",

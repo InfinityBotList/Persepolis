@@ -226,7 +226,7 @@ dependencies = [
 [[package]]
 name = "command_attr"
 version = "0.4.1"
-source = "git+https://github.com/serenity-rs/serenity?branch=next#b792c981d965644a6920ae3d47d9889c1da99520"
+source = "git+https://github.com/mkrasnitski/serenity?branch=guild-mfa#b49450b670e2f43f56fe4e31511a55a3a0fe09b9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1647,7 +1647,7 @@ dependencies = [
 [[package]]
 name = "serenity"
 version = "0.11.5"
-source = "git+https://github.com/serenity-rs/serenity?branch=next#b792c981d965644a6920ae3d47d9889c1da99520"
+source = "git+https://github.com/mkrasnitski/serenity?branch=guild-mfa#b49450b670e2f43f56fe4e31511a55a3a0fe09b9"
 dependencies = [
  "async-trait",
  "base64 0.21.0",
