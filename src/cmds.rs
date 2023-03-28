@@ -1,4 +1,6 @@
-use poise::{CreateReply, serenity_prelude::{CreateEmbed, Mentionable, CreateEmbedFooter, CreateActionRow, CreateButton}};
+use std::time::Duration;
+
+use poise::{CreateReply, serenity_prelude::{CreateEmbed, Mentionable, CreateEmbedFooter, CreateActionRow, CreateButton, ButtonStyle, CreateWebhook, CreateAttachment, ExecuteWebhook}};
 
 use crate::{checks, Context, Error};
 
@@ -67,7 +69,9 @@ Since you seem new to this place, how about a nice look arou-?
 
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
-            ctx.say("Whoa there! Look at that! There's a new bot to review!!! Type ``/queue`` (or ``ibb!queue``) to see the queue
+            ctx.say("Whoa there! Look at that! There's a new bot to review!!! 
+            
+Type ``/queue`` (or ``ibb!queue``) to see the queue. Then use ``/claim`` (or ``ibo!claim``) to claim the bot.
             
 **You must complete this challenge within 1 hour. Using testing commands properly will reset the timer.**").await?;
 
@@ -105,7 +109,8 @@ Since you seem new to this place, how about a nice look arou-?
             .field("Claimed by", "*You are free to test this bot. It is not claimed*", false)
             .field("Approval Note", "Pls test me and make sure I work :heart:", true)
             .field("Queue name", bot_name, true)
-            .field("Invite", format!("[Invite Bot]({})", bot_data.invite), true);
+            .field("Invite", format!("[Invite Bot]({})", bot_data.invite), true)
+            .footer(CreateEmbedFooter::new("TIP: You can use ibo!claim (or /claim) to claim this bot!"));
 
             ctx.send(
                 CreateReply::new()
@@ -151,6 +156,113 @@ pub async fn claim(ctx: Context<'_>) -> Result<(), Error> {
     .parse::<crate::states::OnboardState>()?;
 
     match onboard_state {
+        crate::states::OnboardState::Started => {
+            let builder = CreateReply::new()
+            .embed(
+                CreateEmbed::default()
+                .title("Bot Already Claimed")
+                .description(format!(
+                    "This bot is already claimed by {}",
+                    data.cache_http.cache.current_user().id.mention()
+                ))
+                .color(0xFF0000)
+            )
+            .components(
+                vec![
+                    CreateActionRow::Buttons(
+                        vec![
+                            CreateButton::new("fclaim")
+                                .label("Force Claim")
+                                .style(ButtonStyle::Danger)
+                                .disabled(true),
+                            CreateButton::new("remind")
+                                .label("Remind Reviewer")
+                                .style(ButtonStyle::Secondary),
+                        ]
+                    )
+                ]
+            );
+
+            let mut msg = ctx.send(
+                builder.clone()
+            )
+            .await?
+            .into_message()
+            .await?;
+
+            ctx.say("When reviewing, it is STRONGLY recommended (and a good practice) to **remind the reviewer first before force claiming a bot they have claimed**. So, lets do that :smirk:").await?;
+
+            let interaction = msg
+            .await_component_interaction(ctx.discord())
+            .author_id(ctx.author().id)
+            .await;
+
+            msg.edit(ctx.discord(), builder.to_prefix_edit().components(vec![])).await?; // remove buttons after button press
+
+            if let Some(m) = &interaction {
+                let id = &m.data.custom_id;
+
+                if id != "remind" {
+                    return Ok(());
+                }
+
+                ctx.say(
+                    format!(
+                        "<@{claimed_by}>, did you forgot to finish testing <@{bot_id}>? This reminder has been recorded internally for staff activity tracking purposes!",
+                        claimed_by = data.cache_http.cache.current_user().id,
+                        bot_id = crate::config::CONFIG.test_bot
+                    )
+                ).await?;
+
+                // Create a discord webhook
+                let wh = ctx
+                    .channel_id()
+                    .create_webhook(
+                        &ctx.discord(),
+                        CreateWebhook::new("Frostpaw").avatar(
+                            &CreateAttachment::url(
+                                &ctx.discord(),
+                                "https://cdn.infinitybots.xyz/images/png/onboarding-v4.png",
+                            )
+                            .await?,
+                        ),
+                    )
+                    .await?;
+
+                tokio::time::sleep(Duration::from_secs(3)).await;
+
+                let bot_name = {
+                    data.cache_http.cache.user(crate::config::CONFIG.test_bot)
+                    .ok_or("Bot not found")?
+                    .name
+                    .clone()
+                };    
+
+                wh.execute(
+                    &ctx.discord(),
+                    true,
+                    ExecuteWebhook::default()
+                    .content(
+                        format!(
+                            "Ack! sorry about that. I completely forgot about {} due to personal issues, yknow?",
+                            bot_name
+                        )
+                    )
+                ).await?;
+    
+                ctx.say("Great! With a real bot, things won't go this smoothly, but you can always remind people to test their bot! Now try claiming again, but this time use ``Force Claim``").await?; 
+
+                sqlx::query!(
+                    "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
+                    crate::states::OnboardState::QueueRemindedReviewer.to_string(),
+                    ctx.author().id.to_string()
+                )
+                .execute(&data.pool)
+                .await?;    
+            }
+
+            Ok(())
+        },
         crate::states::OnboardState::Pending => {
             Err(
                 format!("Please run ``{}queue`` to get started!", ctx.prefix()).into()
