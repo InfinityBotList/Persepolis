@@ -1,4 +1,4 @@
-use poise::serenity_prelude::{Message, GuildId, CreateChannel, EditMessage, CreateEmbed, CreateActionRow, CreateButton, EditRole, permissions, ChannelId, RoleId};
+use poise::serenity_prelude::{Message, GuildId, CreateChannel, EditMessage, CreateEmbed, CreateActionRow, CreateButton, EditRole, permissions, ChannelId, RoleId, Mentionable};
 use serenity::json::json;
 use crate::{Context, Error, crypto::gen_random, cache::CacheHttpImpl, config};
 
@@ -61,13 +61,31 @@ pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Erro
 pub async fn setup_readme(cache_http: &CacheHttpImpl, guild: GuildId) -> Result<ChannelId, Error> {
     // Find the readme channel
     let mut readme_channel = None;
+    let mut general_channel = None;
     {
         let guild_cache = cache_http.cache.guild(guild).ok_or("Could not find the guild!")?;
 
         if let Some(chan) = guild_cache.channels.values().find(|c| c.name == "readme") {
             readme_channel = Some(chan.id);
         }
+
+        if let Some(chan) = guild_cache.channels.values().find(|c| c.name == "general") {
+            general_channel = Some(chan.id);
+        }
     }
+
+    // Just in case it doesn't exist
+    let general_channel = if let Some(chan) = general_channel {
+        chan
+    } else {
+        let new_general_channel = guild.create_channel(
+            cache_http, 
+            CreateChannel::new("general")
+            .topic("This is the general channel for the server.")
+        ).await?;
+
+        new_general_channel.id
+    };
 
     if readme_channel.is_none() {
         let new_readme_channel = guild.create_channel(
@@ -78,11 +96,14 @@ pub async fn setup_readme(cache_http: &CacheHttpImpl, guild: GuildId) -> Result<
 
         new_readme_channel.say(
             cache_http,
-            "
+            format!("
 Welcome to your onboarding server! Please read the following:
-1. To start onboarding, run ``ibb!onboard`` in the #general channel.
-2. There is a 1 hour time limit for onboarding. If you exceed this time limit, you will have to start over. You can extend this limit by progressing through onboarding.
-            "
+1. To begin, run ``ibo!queue`` in the {} channel.
+2. Make sure to test **all** commands of the test bot during onboarding. In actual bot review, you *do not need to do this* but in onboarding, you *must**.
+3. If slash commands do not appear, then try leaving and rejoining, if it still does not work, then please DM staff.
+
+**There is a 1 hour time limit for onboarding. If you exceed this time limit, you will have to start over. You can extend this limit by progressing through onboarding.**
+            ", general_channel.mention())
         ).await?;
 
         readme_channel = Some(new_readme_channel.id);
