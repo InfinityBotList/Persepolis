@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use poise::{CreateReply, serenity_prelude::{CreateEmbed, Mentionable, CreateEmbedFooter, CreateActionRow, CreateButton, ButtonStyle, CreateWebhook, CreateAttachment, ExecuteWebhook}};
+use poise::{CreateReply, serenity_prelude::{CreateEmbed, Mentionable, CreateEmbedFooter, CreateActionRow, CreateButton, ButtonStyle, CreateWebhook, CreateAttachment, ExecuteWebhook, Member}};
 
 use crate::{checks, Context, Error};
 
@@ -70,9 +70,15 @@ Since you seem new to this place, how about a nice look arou-?
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
             ctx.say("Whoa there! Look at that! There's a new bot to review!!! 
-            
-Type ``/queue`` (or ``ibb!queue``) to see the queue. Then use ``/claim`` (or ``ibo!claim``) to claim the bot.
-            
+
+**Here are the general steps to follow:**
+
+1. Type ``/queue`` (or ``ibo!queue``) to see the queue. 
+2. Invite the bot to the server (if the invite fails due to lacking verification/anti-spam/whatever, just deny the bot)
+3. Then use ``/claim`` (or ``ibo!claim``) to claim the bot.
+4. Test the bot in question
+5. Approve or deny the bot using ``/approve`` or ``/deny`` (or ``ibo!approve`` or ``ibo!deny``)
+
 **You must complete this challenge within 1 hour. Using testing commands properly will reset the timer.**").await?;
 
             sqlx::query!(
@@ -143,7 +149,7 @@ Type ``/queue`` (or ``ibb!queue``) to see the queue. Then use ``/claim`` (or ``i
         check = "checks::can_onboard",
     )
 ]
-pub async fn claim(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
     let data = ctx.data();
 
     let onboard_state = sqlx::query!(
@@ -157,6 +163,20 @@ pub async fn claim(ctx: Context<'_>) -> Result<(), Error> {
 
     match onboard_state {
         crate::states::OnboardState::Started => {
+            if member.user.id.0 != crate::config::CONFIG.test_bot {
+                ctx.send(
+                    CreateReply::new()
+                    .embed(
+                        CreateEmbed::default()
+                        .title("Invalid Bot")
+                        .description("You can only claim the test bot!")
+                        .color(0xFF0000)
+                    )
+                ).await?;
+
+                return Ok(());
+            }
+
             let builder = CreateReply::new()
             .embed(
                 CreateEmbed::default()
@@ -219,7 +239,7 @@ pub async fn claim(ctx: Context<'_>) -> Result<(), Error> {
                     .channel_id()
                     .create_webhook(
                         &ctx.discord(),
-                        CreateWebhook::new("Frostpaw").avatar(
+                        CreateWebhook::new("Splashtail").avatar(
                             &CreateAttachment::url(
                                 &ctx.discord(),
                                 "https://cdn.infinitybots.xyz/images/png/onboarding-v4.png",
@@ -259,6 +279,90 @@ pub async fn claim(ctx: Context<'_>) -> Result<(), Error> {
                 )
                 .execute(&data.pool)
                 .await?;    
+            }
+
+            Ok(())
+        },
+        crate::states::OnboardState::QueueRemindedReviewer => {
+            if member.user.id.0 != crate::config::CONFIG.test_bot {
+                ctx.send(
+                    CreateReply::new()
+                    .embed(
+                        CreateEmbed::default()
+                        .title("Invalid Bot")
+                        .description("You can only claim the test bot!")
+                        .color(0xFF0000)
+                    )
+                ).await?;
+
+                return Ok(());
+            }
+
+            let builder = CreateReply::new()
+            .embed(
+                CreateEmbed::default()
+                .title("Bot Already Claimed")
+                .description(format!(
+                    "This bot is already claimed by {}",
+                    data.cache_http.cache.current_user().id.mention()
+                ))
+                .color(0xFF0000)
+            )
+            .components(
+                vec![
+                    CreateActionRow::Buttons(
+                        vec![
+                            CreateButton::new("fclaim")
+                                .label("Force Claim")
+                                .style(ButtonStyle::Danger),
+                            CreateButton::new("remind")
+                                .label("Remind Reviewer")
+                                .style(ButtonStyle::Secondary)
+                                .disabled(true),
+                        ]
+                    )
+                ]
+            );
+
+            let mut msg = ctx.send(
+                builder.clone()
+            )
+            .await?
+            .into_message()
+            .await?;
+
+            let interaction = msg
+            .await_component_interaction(ctx.discord())
+            .author_id(ctx.author().id)
+            .await;
+
+            msg.edit(ctx.discord(), builder.to_prefix_edit().components(vec![])).await?; // remove buttons after button press
+
+            if let Some(m) = &interaction {
+                let id = &m.data.custom_id;
+
+                if id != "fclaim" {
+                    return Ok(());
+                }
+
+                sqlx::query!(
+                    "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
+                    crate::states::OnboardState::Claimed.to_string(),
+                    ctx.author().id.to_string()
+                )
+                .execute(&data.pool)
+                .await?;
+
+                let msg = CreateReply::default().embed(
+                    CreateEmbed::default()
+                        .title("Bot Claimed")
+                        .description(format!("You have claimed <@{}>", crate::config::CONFIG.test_bot))
+                        .footer(CreateEmbedFooter::new(
+                            "Use ibb!invite or /invite to get the bots invite",
+                        )),
+                );
+
+                ctx.send(msg).await?;
             }
 
             Ok(())

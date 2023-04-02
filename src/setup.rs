@@ -99,7 +99,7 @@ pub async fn setup_readme(cache_http: &CacheHttpImpl, guild: GuildId) -> Result<
             format!("
 Welcome to your onboarding server! Please read the following:
 1. To begin, run ``ibo!queue`` in the {} channel.
-2. Make sure to test **all** commands of the test bot during onboarding. In actual bot review, you *do not need to do this* but in onboarding, you *must**.
+2. Make sure to test **all** commands of the test bot during onboarding. In actual bot review, you *do not need to do this* but in onboarding, you **must**.
 3. If slash commands do not appear, then try leaving and rejoining, if it still does not work, then please DM staff.
 
 **There is a 1 hour time limit for onboarding. If you exceed this time limit, you will have to start over. You can extend this limit by progressing through onboarding.**
