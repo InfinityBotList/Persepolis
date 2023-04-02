@@ -6,6 +6,7 @@ use poise::serenity_prelude::{UserId, GuildId, AddMember};
 use serde::Deserialize;
 use sqlx::PgPool;
 use serenity::json::json;
+use tower_http::cors::{CorsLayer, Any};
 
 use crate::{cache::CacheHttpImpl, config, setup::{setup_readme, get_onboard_user_role}};
 
@@ -19,8 +20,15 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
 
     let app = Router::new()
         .route("/:uid", get(create_login))
+        .route("/:id/code", get(get_onboard_code))
         .route("/confirm-login", get(confirm_login))
-        .with_state(shared_state);
+        .with_state(shared_state)
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        );
 
     let addr = "127.0.0.1:3011"
         .parse()
@@ -45,6 +53,20 @@ impl IntoResponse for ServerError {
         match self {
             ServerError::Error(e) => {
                 (StatusCode::BAD_REQUEST, e).into_response()
+            }
+        }
+    }
+}
+
+enum ServerResponse {
+    Response(String)
+}
+
+impl IntoResponse for ServerResponse {
+    fn into_response(self) -> Response {
+        match self {
+            ServerResponse::Response(e) => {
+                (StatusCode::OK, e).into_response()
             }
         }
     }
@@ -162,5 +184,41 @@ async fn confirm_login(
         }
     } else {
         Err(ServerError::Error("User has no staff onboard guild set".to_string()))
+    }
+}
+
+#[derive(Deserialize)]
+struct GetCode {
+    frag: String,
+}
+
+async fn get_onboard_code(
+    State(app_state): State<Arc<AppState>>,
+    Path(uid): Path<UserId>,
+    data: Query<GetCode>,
+) -> Result<ServerResponse, ServerError> {
+    let sess_code = sqlx::query!(
+        "SELECT staff_onboard_session_code FROM users WHERE user_id = $1",
+        uid.to_string()
+    )
+    .fetch_one(&app_state.pool)
+    .await
+    .map_err(|_| ServerError::Error("Could not get user from database".to_string()))?
+    .staff_onboard_session_code;
+
+    if let Some(sess_code) = sess_code {
+        // Ensure sess_code len is greater than 20
+        if sess_code.len() < 20 {
+            return Err(ServerError::Error("Internal error: sess_code len > 20".to_string()));
+        }
+
+        // Compare first 20 characters
+        if sess_code[..20] == data.frag {
+            Ok(ServerResponse::Response(sess_code))
+        } else {
+            Err(ServerError::Error("Invalid code".to_string()))
+        }
+    } else {
+        Err(ServerError::Error("User has no staff onboard code set".to_string()))
     }
 }

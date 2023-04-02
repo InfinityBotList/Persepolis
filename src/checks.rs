@@ -98,7 +98,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
 
             // Reset to pending
             sqlx::query!(
-                "UPDATE users SET staff_onboard_state = $1, staff_onboard_last_start_time = NOW() WHERE user_id = $2",
+                "UPDATE users SET staff_onboard_session_code = NULL, staff_onboard_state = $1, staff_onboard_last_start_time = NOW() WHERE user_id = $2",
                 states::OnboardState::Pending.to_string(),
                 ctx.author().id.to_string()
             )
@@ -147,7 +147,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
             .await?;
 
             sqlx::query!(
-                "UPDATE users SET staff_onboard_state = $1, staff_onboard_last_start_time = NOW() WHERE user_id = $2",
+                "UPDATE users SET staff_onboard_session_code = NULL, staff_onboard_state = $1, staff_onboard_last_start_time = NOW() WHERE user_id = $2",
                 states::OnboardState::Pending.to_string(),
                 ctx.author().id.to_string()
             )
@@ -187,7 +187,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
         .await?;
 
         sqlx::query!(
-            "UPDATE users SET staff_onboard_state = $1, staff_onboard_last_start_time = NOW() WHERE user_id = $2",
+            "UPDATE users SET staff_onboard_session_code = NULL, staff_onboard_state = $1, staff_onboard_last_start_time = NOW() WHERE user_id = $2",
             states::OnboardState::Pending.to_string(),
             ctx.author().id.to_string()
         )

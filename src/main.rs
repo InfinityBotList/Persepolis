@@ -155,7 +155,7 @@ OR (staff_onboard_state = $1 AND staff_onboard_last_start_time < NOW() - INTERVA
 
     for row in rows {
         sqlx::query!(
-            "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
+            "UPDATE users SET staff_onboard_session_code = NULL, staff_onboard_state = $1 WHERE user_id = $2",
             states::OnboardState::Pending.to_string(),
             row.user_id
         )
@@ -212,6 +212,7 @@ async fn main() {
                 cmds::unclaim(),
                 cmds::approve(),
                 cmds::deny(),
+                cmds::staffguide(),
             ],
             /// This code is run before every command
             pre_command: |ctx| {
