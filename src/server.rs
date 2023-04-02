@@ -20,7 +20,7 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
 
     let app = Router::new()
         .route("/:uid", get(create_login))
-        .route("/:id/code", get(get_onboard_code))
+        .route("/:uid/code", get(get_onboard_code))
         .route("/confirm-login", get(confirm_login))
         .with_state(shared_state)
         .layer(
