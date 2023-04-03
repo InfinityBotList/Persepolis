@@ -17,7 +17,6 @@ pub async fn start(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-
 #[
     poise::command(
         prefix_command,
@@ -38,6 +37,13 @@ pub async fn queue(ctx: Context<'_>) -> Result<(), Error> {
     .staff_onboard_state
     .parse::<crate::states::OnboardState>()?;
 
+    let bot_name = {
+        data.cache_http.cache.user(crate::config::CONFIG.test_bot)
+        .ok_or("Bot not found")?
+        .name
+        .clone()
+    };
+
     match onboard_state {
         crate::states::OnboardState::Pending => {
             ctx.send(
@@ -56,7 +62,7 @@ Since you seem new to this place, how about a nice look arou-?
                         format!(
                             "**Bot:** <@{bot_id}> ({bot_name})\n\n**Owner:** {owner_id} ({owner_name})\n\n**Bot Page:** {frontend_url}/bots/{bot_id}",
                             bot_id = crate::config::CONFIG.test_bot,
-                            bot_name = "Ninja Bot",
+                            bot_name = bot_name,
                             owner_id = data.cache_http.cache.current_user().id.mention(),
                             owner_name = data.cache_http.cache.current_user().name,
                             frontend_url = crate::config::CONFIG.frontend_url,
@@ -134,10 +140,50 @@ Since you seem new to this place, how about a nice look arou-?
             ).await?;
 
             Ok(())
-        }
+        },
         _ => {
+            let bot_name = {
+                data.cache_http.cache.user(crate::config::CONFIG.test_bot)
+                .ok_or("Bot not found")?
+                .name
+                .clone()
+            };
+
+            let bot_data = sqlx::query!(
+                "SELECT short, owner, invite FROM bots WHERE bot_id = $1",
+                crate::config::CONFIG.test_bot.to_string()
+            )
+            .fetch_one(&data.pool)
+            .await?;
+
+            let embed = CreateEmbed::new()
+            .title(bot_name.to_string() + " [Sandbox Mode]")
+            .field("ID", crate::config::CONFIG.test_bot.to_string(), false)
+            .field("Short", bot_data.short, false)
+            .field("Owner", bot_data.owner.ok_or("Test bot may only have a main owner!")?, false)
+            .field("Claimed by", ctx.author().mention().to_string(), false)
+            .field("Approval Note", "Pls test me and make sure I work :heart:", true)
+            .field("Queue name", bot_name, true)
+            .field("Invite", format!("[Invite Bot]({})", bot_data.invite), true)
+            .footer(CreateEmbedFooter::new("TIP: Test this bot now. Then approve/deny it"));
+
+            ctx.send(
+                CreateReply::new()
+                .embed(embed)
+                .components(
+                    vec![
+                        CreateActionRow::Buttons(
+                            vec![
+                                CreateButton::new_link(bot_data.invite).label("Invite"),
+                                CreateButton::new_link(format!("{}/bots/{}", crate::config::CONFIG.frontend_url, crate::config::CONFIG.test_bot)).label("View Page"),
+                            ]
+                        )
+                    ]
+                )
+            ).await?;
+
             Ok(())
-        } // TODO, remove
+        }
     }
 }
 
