@@ -209,7 +209,10 @@ In order to better understand your decision, please complete the following surve
                     .execute(&data.pool)
                     .await?;
 
-                    ctx.say("Now, you just need to wait for a manager to approve this onboarding response!").await?;
+                    qm.interaction.create_response(&ctx.discord(), CreateInteractionResponse::Message(
+                        CreateInteractionResponseMessage::default()
+                        .content("Now, you just need to wait for a manager to approve this onboarding response!")
+                    )).await?;
                 } else {
                     return Ok(())
                 }

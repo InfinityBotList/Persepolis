@@ -11,7 +11,7 @@ pub async fn check_code(
     let inputted_code = inputted_code.replace(' ', "");
 
     // Make sure there are no unicode characters
-    if inputted_code.chars().any(|c| c.is_ascii_alphanumeric()) {
+    if inputted_code.chars().any(|c| !c.is_ascii_alphanumeric()) {
         return Err("Unicode characters are not allowed".into());
     }
 
