@@ -178,6 +178,8 @@ In order to better understand your decision, please complete the survey by click
                             CreateInteractionResponseMessage::default()
                             .content("Whoa there! You inputted the wrong verification code (hint: ``/staffguide`` or ``ibb!staffguide``)")
                         )).await?;
+
+                        return Ok(());
                     }
 
                     let s_onboard = sqlx::query!(
