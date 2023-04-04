@@ -69,7 +69,15 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
             return Err("You have already completed onboarding! Contact management if you believe this to be an error!".into())
         },
         states::OnboardState::PendingManagerReview => {
-            return Err("You are currently awaiting manager review! Contact management if you want to check the status on this!".into())
+            return Err(
+                format!("You are currently awaiting manager review! Contact management if you want to check the status on this!
+
+If you accidentally left the onboarding server, you can rejoin using {}/{}
+                ", 
+                    config::CONFIG.persepolis_domain, 
+                    ctx.author().id
+                ).into()
+            )
         },
         _ => {}
     }

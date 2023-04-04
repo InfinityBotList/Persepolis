@@ -1,9 +1,6 @@
 use std::num::NonZeroU64;
-
 use poise::serenity_prelude::GuildId;
-
 use crate::{checks, Context, Error};
-
 
 /// Guild base command
 #[poise::command(
@@ -65,7 +62,7 @@ pub async fn staff_guilddel(
     Ok(())
 }
 
-/// Delete server
+/// Leave server
 #[poise::command(
     rename = "leave",
     track_edits,

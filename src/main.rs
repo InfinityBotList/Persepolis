@@ -14,7 +14,7 @@ mod crypto;
 mod setup;
 mod cache;
 mod server;
-mod guilds;
+mod admin;
 mod stats;
 mod cmds;
 mod finish;
@@ -209,7 +209,7 @@ async fn main() {
                 checks::test_can_onboard(),
                 help::help(),
                 help::simplehelp(),
-                guilds::guild(),
+                admin::guild(),
                 stats::stats(),
                 cmds::start::start(),
                 cmds::queue::queue(),

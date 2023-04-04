@@ -198,7 +198,7 @@ In order to better understand your decision, please complete the following surve
                             user_id = ctx.author().id,
                             action = "deny",
                             reason = reason,
-                            url = crate::config::CONFIG.frontend_url.clone()+"/staff/onboardresp/" + &tok
+                            url = crate::config::CONFIG.frontend_url.clone()+"/admin/onboardresp/" + &tok
                         )
                     ).await?;
 

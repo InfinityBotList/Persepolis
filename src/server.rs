@@ -1,6 +1,6 @@
 use std::{sync::Arc, num::NonZeroU64};
 
-use axum::{Router, routing::get, extract::{State, Path, Query}, response::{Redirect, IntoResponse, Response}, http::{StatusCode}};
+use axum::{Router, routing::get, extract::{State, Path, Query}, response::{Redirect, IntoResponse, Response}, http::{StatusCode}, Json};
 use log::info;
 use poise::serenity_prelude::{UserId, GuildId, AddMember};
 use serde::Deserialize;
@@ -22,6 +22,7 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
         .route("/:uid", get(create_login))
         .route("/:uid/code", get(get_onboard_code))
         .route("/confirm-login", get(confirm_login))
+        .route("/resp/:rid", get(get_onboard_response))
         .with_state(shared_state)
         .layer(
             CorsLayer::new()
@@ -59,7 +60,7 @@ impl IntoResponse for ServerError {
 }
 
 enum ServerResponse {
-    Response(String)
+    Response(String),
 }
 
 impl IntoResponse for ServerResponse {
@@ -67,7 +68,7 @@ impl IntoResponse for ServerResponse {
         match self {
             ServerResponse::Response(e) => {
                 (StatusCode::OK, e).into_response()
-            }
+            },
         }
     }
 }
@@ -221,4 +222,24 @@ async fn get_onboard_code(
     } else {
         Err(ServerError::Error("User has no staff onboard code set".to_string()))
     }
+}
+
+async fn get_onboard_response(
+    State(app_state): State<Arc<AppState>>,
+    Path(rid): Path<String>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    let resp = sqlx::query!(
+        "SELECT data, user_id FROM onboard_data WHERE onboard_code = $1",
+        rid.to_string()
+    )
+    .fetch_one(&app_state.pool)
+    .await
+    .map_err(|_| ServerError::Error("Could not find onboarding response".to_string()))?;
+
+    let json = serde_json::json!({
+        "user_id": resp.user_id,
+        "data": resp.data
+    });
+
+    Ok(Json(json))
 }

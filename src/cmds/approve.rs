@@ -213,7 +213,7 @@ In order to better understand your decision, please complete the survey by click
                             user_id = ctx.author().id,
                             action = "approve",
                             reason = reason,
-                            url = crate::config::CONFIG.frontend_url.clone()+"/staff/onboardresp/" + &tok
+                            url = crate::config::CONFIG.frontend_url.clone()+"/admin/onboardresp/" + &tok
                         )
                     ).await?;
 
