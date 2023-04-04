@@ -102,7 +102,7 @@ In order to better understand your decision, please complete the following surve
             if let Some(m) = &interaction {
                 let id = &m.data.custom_id;
 
-                if id != "cancel" {
+                if id == "cancel" {
                     return Ok(());
                 }
 

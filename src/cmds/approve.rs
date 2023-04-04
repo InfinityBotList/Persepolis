@@ -5,7 +5,7 @@ use poise::serenity_prelude::{
     CreateEmbed,
     Member, 
     CreateActionRow,
-    CreateButton,
+    CreateButton, 
     ButtonStyle, 
     CreateQuickModal, 
     CreateInputText, 
@@ -116,7 +116,7 @@ In order to better understand your decision, please complete the survey by click
             if let Some(m) = &interaction {
                 let id = &m.data.custom_id;
 
-                if id != "cancel" {
+                if id == "cancel" {
                     return Ok(());
                 }
 
@@ -135,7 +135,7 @@ In order to better understand your decision, please complete the survey by click
                     .field(
                         CreateInputText::new(
                             InputTextStyle::Paragraph,
-                            "What commands did you test. Did they work as expected",
+                            "Did all commands tested work as expected?",
                             "tested_commands"
                         )
                         .placeholder("I tested...")
