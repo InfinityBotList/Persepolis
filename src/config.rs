@@ -45,7 +45,7 @@ pub struct Channels {
 impl Default for Channels {
     fn default() -> Self {
         Self {
-            onboarding_channel: NonZeroU64::new(990716921475375114).unwrap(),
+            onboarding_channel: NonZeroU64::new(1087052316533858425).unwrap(),
         }
     }
 }
