@@ -17,6 +17,7 @@ mod server;
 mod guilds;
 mod stats;
 mod cmds;
+mod finish;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -141,13 +142,17 @@ async fn clean_out_impl(
     let rows = sqlx::query!(
         "
 SELECT user_id, staff_onboard_guild FROM users
-WHERE staff_onboard_guild IS NOT NULL AND (
--- Case 1: Not complete (!= $1) but has been more than one hour
-(staff_onboard_state != $1 AND staff_onboard_last_start_time < NOW() - INTERVAL '1 hour')
+WHERE staff_onboard_guild IS NOT NULL 
+-- The guild in question should never be pending manager review
+AND staff_onboard_state != $1
+AND (
+-- Case 1: Not complete (!= $2) but has been more than one hour
+(staff_onboard_state != $2 AND staff_onboard_last_start_time < NOW() - INTERVAL '1 hour')
 -- Case 2: Complete ($1) but has been more than 1 month
-OR (staff_onboard_state = $1 AND staff_onboard_last_start_time < NOW() - INTERVAL '1 month')
+OR (staff_onboard_state = $2 AND staff_onboard_last_start_time < NOW() - INTERVAL '1 month')
 )
         ",
+        states::OnboardState::PendingManagerReview.to_string(),
         states::OnboardState::Completed.to_string()
     )
     .fetch_all(pool)
