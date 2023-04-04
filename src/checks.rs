@@ -64,8 +64,14 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
     let onboard_state = states::OnboardState::from_str(&state.staff_onboard_state)
         .map_err(|_| "Invalid onboard state")?;
 
-    if onboard_state == states::OnboardState::Completed {
-        return Err("You have already completed onboarding! Contact management if you believe this to be an error!".into())
+    match onboard_state {
+        states::OnboardState::Completed => {
+            return Err("You have already completed onboarding! Contact management if you believe this to be an error!".into())
+        },
+        states::OnboardState::PendingManagerReview => {
+            return Err("You are currently awaiting manager review! Contact management if you want to check the status on this!".into())
+        },
+        _ => {}
     }
 
     // Check if older than 1 hour
