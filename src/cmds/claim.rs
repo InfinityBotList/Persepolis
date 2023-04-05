@@ -119,7 +119,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                         CreateWebhook::new("Splashtail").avatar(
                             &CreateAttachment::url(
                                 &ctx.discord(),
-                                "https://cdn.infinitybots.xyz/images/png/onboarding-v4.png",
+                                "https://cdn.infinitybots.gg/images/png/onboarding-v4.png",
                             )
                             .await?,
                         ),
