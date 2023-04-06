@@ -101,7 +101,7 @@ Since you seem new to this place, how about a nice look arou-?
 
 
             let bot_data = sqlx::query!(
-                "SELECT short, owner, invite FROM bots WHERE bot_id = $1",
+                "SELECT short, invite FROM bots WHERE bot_id = $1",
                 crate::config::CONFIG.test_bot.to_string()
             )
             .fetch_one(&data.pool)
@@ -111,7 +111,7 @@ Since you seem new to this place, how about a nice look arou-?
             .title(bot_name.to_string() + " [Sandbox Mode]")
             .field("ID", crate::config::CONFIG.test_bot.to_string(), false)
             .field("Short", bot_data.short, false)
-            .field("Owner", bot_data.owner.ok_or("Test bot may only have a main owner!")?, false)
+            .field("Owner", "N/A", false)
             .field("Claimed by", "*You are free to test this bot. It is not claimed*", false)
             .field("Approval Note", "Pls test me and make sure I work :heart:", true)
             .field("Queue name", bot_name, true)
@@ -144,7 +144,7 @@ Since you seem new to this place, how about a nice look arou-?
             };
 
             let bot_data = sqlx::query!(
-                "SELECT short, owner, invite FROM bots WHERE bot_id = $1",
+                "SELECT short, invite FROM bots WHERE bot_id = $1",
                 crate::config::CONFIG.test_bot.to_string()
             )
             .fetch_one(&data.pool)
@@ -154,7 +154,7 @@ Since you seem new to this place, how about a nice look arou-?
             .title(bot_name.to_string() + " [Sandbox Mode]")
             .field("ID", crate::config::CONFIG.test_bot.to_string(), false)
             .field("Short", bot_data.short, false)
-            .field("Owner", bot_data.owner.ok_or("Test bot may only have a main owner!")?, false)
+            .field("Owner", "N/A", false)
             .field("Claimed by", ctx.author().mention().to_string(), false)
             .field("Approval Note", "Pls test me and make sure I work :heart:", true)
             .field("Queue name", bot_name, true)

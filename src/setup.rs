@@ -1,8 +1,26 @@
+use std::num::NonZeroU64;
+
 use poise::serenity_prelude::{Message, GuildId, CreateChannel, EditMessage, CreateEmbed, CreateActionRow, CreateButton, EditRole, permissions, ChannelId, RoleId, Mentionable};
 use serenity::json::json;
 use crate::{Context, Error, crypto::gen_random, cache::CacheHttpImpl, config};
 
 pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Error> {
+    // Check if user has onboard_guild set first
+    let row = sqlx::query!(
+        "SELECT staff_onboard_guild FROM users WHERE user_id = $1",
+        ctx.author().id.to_string()
+    )
+    .fetch_optional(&ctx.data().pool)
+    .await?;
+
+    if let Some(row) = row {
+        if let Some(g) = row.staff_onboard_guild {
+            if let Ok(g) = g.parse::<NonZeroU64>() {
+                delete_or_leave_guild(&ctx.data().cache_http, GuildId(g)).await?
+            }
+        }
+    }
+
     if ctx.discord().cache.guilds().len() >= 10 {
         return Err("Creating new guilds can only be done when the bot is in less than 10 guilds".into())
     }
