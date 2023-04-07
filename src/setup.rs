@@ -4,6 +4,7 @@ use poise::serenity_prelude::{Message, GuildId, CreateChannel, EditMessage, Crea
 use serenity::json::json;
 use crate::{Context, Error, crypto::gen_random, cache::CacheHttpImpl, config};
 
+/// Sets up a guild
 pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Error> {
     // Check if user has onboard_guild set first
     let row = sqlx::query!(
@@ -156,6 +157,7 @@ pub async fn get_onboard_user_role(cache_http: &CacheHttpImpl, guild: GuildId) -
     }
 }
 
+/// Either deletes or leaves the guild
 pub async fn delete_or_leave_guild(cache_http: &CacheHttpImpl, guild: GuildId) -> Result<(), Error> {
     // Since Guild is not Send, it needs to be block-scoped explicitly
     let mut is_owner = false;

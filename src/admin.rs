@@ -1,5 +1,5 @@
 use std::num::NonZeroU64;
-use poise::serenity_prelude::GuildId;
+use poise::{serenity_prelude::{User, GuildId, CreateMessage, CreateActionRow, CreateButton, ButtonStyle}, CreateReply};
 use crate::{checks, Context, Error};
 
 /// Guild base command
@@ -79,6 +79,206 @@ pub async fn staff_guildleave(
     ctx.discord().http.leave_guild(GuildId(gid)).await?;
 
     ctx.say("Removed guild").await?;
+
+    Ok(())
+}
+
+/// Onboarding base command
+#[poise::command(
+    category = "Admin",
+    prefix_command,
+    slash_command,
+    guild_cooldown = 10,
+    subcommands("approveonboard", "denyonboard", "resetonboard",)
+)]
+pub async fn admin(_ctx: Context<'_>) -> Result<(), Error> {
+    Ok(())
+}
+
+/// Approve an onboarding
+#[poise::command(
+    rename = "approve",
+    category = "Admin",
+    track_edits,
+    prefix_command,
+    slash_command,
+    check = "checks::is_admin"
+)]
+pub async fn approveonboard(
+    ctx: Context<'_>,
+    #[description = "The staff id"] member: User,
+) -> Result<(), Error> {
+    let data = ctx.data();
+
+    // Check onboard state of user
+    let onboard_state = sqlx::query!(
+        "SELECT staff_onboard_state FROM users WHERE user_id = $1",
+        member.id.to_string()
+    )
+    .fetch_one(&data.pool)
+    .await?;
+
+    if onboard_state.staff_onboard_state
+        != crate::states::OnboardState::PendingManagerReview.to_string()
+        && onboard_state.staff_onboard_state != crate::states::OnboardState::Denied.to_string()
+    {
+        return Err(format!(
+            "User is not pending manager review and currently has state of: {}",
+            onboard_state.staff_onboard_state
+        )
+        .into());
+    }
+
+    // Update onboard state of user
+    sqlx::query!(
+        "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
+        crate::states::OnboardState::Completed.to_string(),
+        member.id.to_string()
+    )
+    .execute(&data.pool)
+    .await?;
+
+    // DM user that they have been approved
+    let _ = member.dm(
+        &ctx.discord().http,
+        CreateMessage::new()
+        .content("Your onboarding request has been approved. You may now begin approving/denying bots") 
+    ).await?;
+
+    ctx.say("Onboarding request approved!").await?;
+
+    // Delete the onboarding server
+    let staff_onboard_guild = sqlx::query!(
+        "SELECT staff_onboard_guild FROM users WHERE user_id = $1",
+        member.id.to_string()
+    )
+    .fetch_one(&data.pool)
+    .await?;
+
+    if let Some(guild) = staff_onboard_guild.staff_onboard_guild {
+        if let Ok(guild) = guild.parse::<NonZeroU64>() {
+            crate::setup::delete_or_leave_guild(&data.cache_http, GuildId(guild)).await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Denies onboarding requests
+#[poise::command(
+    rename = "deny",
+    category = "Admin",
+    track_edits,
+    prefix_command,
+    slash_command,
+    check = "checks::is_admin"
+)]
+pub async fn denyonboard(
+    ctx: crate::Context<'_>,
+    #[description = "The staff id"] user: User,
+) -> Result<(), Error> {
+    let data = ctx.data();
+
+    // Check onboard state of user
+    let onboard_state = sqlx::query!(
+        "SELECT staff_onboard_state FROM users WHERE user_id = $1",
+        user.id.to_string()
+    )
+    .fetch_one(&data.pool)
+    .await?;
+
+    if onboard_state.staff_onboard_state
+        != crate::states::OnboardState::PendingManagerReview.to_string()
+        && onboard_state.staff_onboard_state != crate::states::OnboardState::Completed.to_string()
+    {
+        return Err(format!(
+            "User is not pending manager review and currently has state of: {}",
+            onboard_state.staff_onboard_state
+        )
+        .into());
+    }
+
+    // Update onboard state of user
+    sqlx::query!(
+        "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
+        crate::states::OnboardState::Denied.to_string(),
+        user.id.to_string()
+    )
+    .execute(&data.pool)
+    .await?;
+
+    // DM user that they have been denied
+    let _ = user.dm(&ctx.discord().http, CreateMessage::new().content("Your onboarding request has been denied. Please contact a manager for more information")).await?;
+
+    ctx.say("Onboarding request denied!").await?;
+
+    Ok(())
+}
+
+/// Resets a onboarding to force a new one
+#[poise::command(
+    rename = "reset",
+    category = "Admin",
+    track_edits,
+    prefix_command,
+    slash_command,
+    check = "checks::is_admin"
+)]
+pub async fn resetonboard(
+    ctx: crate::Context<'_>,
+    #[description = "The staff id"] user: User,
+) -> Result<(), Error> {
+    let data = ctx.data();
+
+    let builder = CreateReply::new()
+        .content("Are you sure you wish to reset this user's onboard state and force them to redo onboarding?")
+        .components(
+            vec![
+                CreateActionRow::Buttons(
+                    vec![
+                        CreateButton::new("continue").label("Continue").style(ButtonStyle::Primary),
+                        CreateButton::new("cancel").label("Cancel").style(ButtonStyle::Danger),
+                    ]
+                )
+            ]
+        );
+
+    let mut msg = ctx.send(builder.clone()).await?.into_message().await?;
+
+    let interaction = msg
+        .await_component_interaction(ctx.discord())
+        .author_id(ctx.author().id)
+        .await;
+
+    msg.edit(ctx.discord(), builder.to_prefix_edit().components(vec![]))
+        .await?; // remove buttons after button press
+
+    let pressed_button_id = match &interaction {
+        Some(m) => &m.data.custom_id,
+        None => {
+            ctx.say("You didn't interact in time").await?;
+            return Ok(());
+        }
+    };
+
+    if pressed_button_id == "cancel" {
+        ctx.say("Cancelled").await?;
+        return Ok(());
+    }
+
+    // Update onboard state of a user
+    sqlx::query!(
+        "UPDATE users SET staff_onboard_guild = NULL, staff_onboard_state = $1, staff_onboard_last_start_time = NOW() WHERE user_id = $2",
+        crate::states::OnboardState::Pending.to_string(),
+        user.id.to_string()
+    )
+    .execute(&data.pool)
+    .await?;
+
+    // DM user that they have been force reset
+    let _ = user.dm(&ctx.discord().http, CreateMessage::new().content("Your onboarding request has been force reset. Please contact a manager for more information. You will, in most cases, need to redo onboarding")).await?;
+
+    ctx.say("Onboarding request reset!").await?;
 
     Ok(())
 }

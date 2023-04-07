@@ -210,6 +210,7 @@ async fn main() {
                 help::help(),
                 help::simplehelp(),
                 admin::guild(),
+                admin::admin(),
                 stats::stats(),
                 cmds::start::start(),
                 cmds::queue::queue(),
