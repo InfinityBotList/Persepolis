@@ -183,7 +183,7 @@ In order to better understand your decision, please complete the survey by click
                     }
 
                     let s_onboard = sqlx::query!(
-                        "SELECT staff_onboarded, staff_onboard_macro_time FROM users WHERE user_id = $1",
+                        "SELECT staff_onboarded, staff_onboard_last_start_time FROM users WHERE user_id = $1",
                         ctx.author().id.to_string()
                     )
                     .fetch_one(&data.pool)
@@ -199,7 +199,7 @@ In order to better understand your decision, please complete the survey by click
                             "feedback": feedback,
                             "approval_reason": reason,
                             "submit_ts": sqlx::types::chrono::Utc::now().timestamp(),
-                            "start_ts": s_onboard.staff_onboard_macro_time.unwrap_or_default().timestamp(),
+                            "start_ts": s_onboard.staff_onboard_last_start_time.unwrap_or_default().timestamp(),
                             "staff_onboarded_before": s_onboard.staff_onboarded,    
                         })
                     )

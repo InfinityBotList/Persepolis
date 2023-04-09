@@ -112,7 +112,7 @@ If you accidentally left the onboarding server, you can rejoin using {}/{}
 
             // Reset to pending
             sqlx::query!(
-                "UPDATE users SET staff_onboard_session_code = NULL, staff_onboard_state = $1, staff_onboard_macro_time = NOW(), staff_onboard_last_start_time = NOW() WHERE user_id = $2",
+                "UPDATE users SET staff_onboard_session_code = NULL, staff_onboard_state = $1, staff_onboard_last_start_time = NOW() WHERE user_id = $2",
                 states::OnboardState::Pending.to_string(),
                 ctx.author().id.to_string()
             )
@@ -161,7 +161,7 @@ If you accidentally left the onboarding server, you can rejoin using {}/{}
             .await?;
 
             sqlx::query!(
-                "UPDATE users SET staff_onboard_session_code = NULL, staff_onboard_state = $1, staff_onboard_macro_time = NOW(), staff_onboard_last_start_time = NOW() WHERE user_id = $2",
+                "UPDATE users SET staff_onboard_session_code = NULL, staff_onboard_state = $1, staff_onboard_last_start_time = NOW() WHERE user_id = $2",
                 states::OnboardState::Pending.to_string(),
                 ctx.author().id.to_string()
             )
@@ -201,7 +201,7 @@ If you accidentally left the onboarding server, you can rejoin using {}/{}
         .await?;
 
         sqlx::query!(
-            "UPDATE users SET staff_onboard_session_code = NULL, staff_onboard_state = $1, staff_onboard_macro_time = NOW(), staff_onboard_last_start_time = NOW() WHERE user_id = $2",
+            "UPDATE users SET staff_onboard_session_code = NULL, staff_onboard_state = $1, staff_onboard_last_start_time = NOW() WHERE user_id = $2",
             states::OnboardState::Pending.to_string(),
             ctx.author().id.to_string()
         )
