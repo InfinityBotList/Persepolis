@@ -196,7 +196,7 @@ In order to better understand your decision, please complete the survey by click
                         serde_json::json!({
                             "free_of_errors": free_of_errors,
                             "tested_commands": tested_commands,
-                            "feedback": feedback,
+                            "feedback_of_onboarding": feedback,
                             "approval_reason": reason,
                             "submit_ts": sqlx::types::chrono::Utc::now().timestamp(),
                             "start_ts": s_onboard.staff_onboard_last_start_time.unwrap_or_default().timestamp(),

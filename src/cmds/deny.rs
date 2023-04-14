@@ -181,7 +181,7 @@ In order to better understand your decision, please complete the following surve
                         serde_json::json!({
                             "against_our_rules": against_our_rules,
                             "tested_commands": tested_commands,
-                            "feedback": feedback,
+                            "feedback_of_onboarding": feedback,
                             "denial_reason": reason,
                             "submit_ts": sqlx::types::chrono::Utc::now().timestamp(),
                             "start_ts": s_onboard.staff_onboard_last_start_time.unwrap_or_default().timestamp(),
