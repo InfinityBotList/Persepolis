@@ -179,7 +179,7 @@ async fn confirm_login(
                 user.id, 
                 AddMember::new(access_token.access_token)
                 .roles(roles)
-            ).await.map_err(|_| ServerError::Error("Could not add you to the guild".to_string()))?;
+            ).await.map_err(|err| ServerError::Error("Could not add you to the guild".to_string() + &err.to_string()))?;
 
             Ok(Redirect::temporary(&guild_url))
         }
