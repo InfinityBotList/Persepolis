@@ -5,6 +5,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Redirect, Response},
     routing::get,
+    routing::post,
     Json, Router,
 };
 use log::info;
@@ -33,7 +34,10 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
         .route("/:uid", get(create_login))
         .route("/:uid/code", get(get_onboard_code))
         .route("/confirm-login", get(confirm_login))
-        .route("/create-quiz", get(get_quiz_questions))
+        .route(
+            "/paradise-protection",
+            post(start_paradise_protection_protocol),
+        )
         .route("/resp/:rid", get(get_onboard_response))
         .with_state(shared_state)
         .layer(
@@ -302,12 +306,13 @@ struct CreateQuizRequest {
     user_id: String,
 }
 
-async fn get_quiz_questions(
+#[axum_macros::debug_handler]
+async fn start_paradise_protection_protocol(
     State(app_state): State<Arc<AppState>>,
     Json(create_quiz_req): Json<CreateQuizRequest>,
 ) -> Result<Json<Vec<Question>>, ServerError> {
     let rec = sqlx::query!(
-        "SELECT banned, staff_onboard_current_onboard_resp_id FROM users WHERE user_id = $1 AND api_token = $2",
+        "SELECT banned, staff_onboard_state, staff_onboard_current_onboard_resp_id FROM users WHERE user_id = $1 AND api_token = $2",
         create_quiz_req.user_id,
         create_quiz_req.token
     )
@@ -321,6 +326,12 @@ async fn get_quiz_questions(
         ));
     }
 
+    if rec.staff_onboard_state != crate::states::OnboardState::InQuiz.to_string() {
+        return Err(ServerError::Error(
+            "Paradise Protection Protocol is not enabled right now".to_string(),
+        ));
+    }
+
     // Check onboard_resp with corresponding resp id
     let resp = sqlx::query!(
         "SELECT data FROM onboard_data WHERE onboard_code = $1",
@@ -328,19 +339,21 @@ async fn get_quiz_questions(
     )
     .fetch_one(&app_state.pool)
     .await
-    .map_err(|_| ServerError::Error("Fatal error: Could not find onboarding response".to_string()))?;
+    .map_err(|_| {
+        ServerError::Error("Fatal error: Could not find onboarding response".to_string())
+    })?;
 
     // Check for data["questions"]
-    let questions = resp.data["questions"]
-        .as_array();
+    let questions = resp.data["questions"].as_array();
 
     if let Some(question) = questions {
         let mut questions = vec![];
 
         for question in question {
             // Parse question as Question
-            let question: Question = serde_json::from_value(question.clone())
-                .map_err(|_| ServerError::Error("Fatal error: Could not parse question".to_string()))?;
+            let question: Question = serde_json::from_value(question.clone()).map_err(|_| {
+                ServerError::Error("Fatal error: Could not parse question".to_string())
+            })?;
 
             questions.push(question);
         }
@@ -348,61 +361,95 @@ async fn get_quiz_questions(
         Ok(Json(questions))
     } else {
         // Create questions randomly from config.questions
-        let mut mcq_questions = vec![];
-        let mut short_questions = vec![];
-        let mut long_questions = vec![];
-
         let mut final_questions = vec![];
 
-        for q in &config::CONFIG.questions {
-            if q.pinned {
-                final_questions.push(q.clone());
-            } else {
-                match q.data {
-                    QuestionData::MultipleChoice { .. } => {
-                        mcq_questions.push(q);
-                    },
-                    QuestionData::Short { .. } => {
-                        short_questions.push(q);
-                    },
-                    QuestionData::Long { .. } => {
-                        long_questions.push(q);
+        // This is in a seperate block to ensure RNG is dropped before saving to database
+        {
+            let mut mcq_questions = vec![];
+            let mut short_questions = vec![];
+            let mut long_questions = vec![];
+
+            for q in &config::CONFIG.questions {
+                if q.pinned {
+                    final_questions.push(q.clone());
+                } else {
+                    match q.data {
+                        QuestionData::MultipleChoice { .. } => {
+                            mcq_questions.push(q);
+                        }
+                        QuestionData::Short { .. } => {
+                            short_questions.push(q);
+                        }
+                        QuestionData::Long { .. } => {
+                            long_questions.push(q);
+                        }
                     }
-                }    
+                }
+            }
+
+            // Choose 3 random mcq questions
+            if mcq_questions.len() < 3 {
+                return Err(ServerError::Error(
+                    "Could not find enough mcq questions".to_string(),
+                ));
+            }
+
+            let mut rng = rand::thread_rng();
+
+            for _ in 0..3 {
+                let q = mcq_questions
+                    .choose(&mut rng)
+                    .ok_or(ServerError::Error("Could not find questions".to_string()))?;
+                final_questions.push(q.clone().clone()); // TODO: Try to remove clone
+            }
+
+            // Choose 3 random short questions
+            if short_questions.len() < 3 {
+                return Err(ServerError::Error(
+                    "Could not find enough short questions".to_string(),
+                ));
+            }
+
+            for _ in 0..3 {
+                let q = short_questions
+                    .choose(&mut rng)
+                    .ok_or(ServerError::Error("Could not find questions".to_string()))?;
+                final_questions.push(q.clone().clone()); // TODO: Try to remove clone
+            }
+
+            // Choose 2 random long questions
+            if long_questions.len() < 2 {
+                return Err(ServerError::Error(
+                    "Could not find enough long questions".to_string(),
+                ));
+            }
+
+            for _ in 0..2 {
+                let q = long_questions
+                    .choose(&mut rng)
+                    .ok_or(ServerError::Error("Could not find questions".to_string()))?;
+                final_questions.push(q.clone().clone()); // TODO: Try to remove clone
             }
         }
 
-        // Choose 3 random mcq questions
-        if mcq_questions.len() < 3 {
-            return Err(ServerError::Error("Could not find enough mcq questions".to_string()));
-        }
+        // Save questions to database
+        let questions_json = serde_json::to_value(final_questions.clone())
+            .map_err(|_| ServerError::Error("Could not serialize questions".to_string()))?;
 
-        let mut rng = rand::thread_rng();
+        let id = rec
+            .staff_onboard_current_onboard_resp_id
+            .ok_or(ServerError::Error(
+                "Could not find onboard_resp_id".to_string(),
+            ))?;
 
-        for _ in 0..3 {
-            let q = mcq_questions.choose(&mut rng).ok_or(ServerError::Error("Could not find questions".to_string()))?;
-            final_questions.push(q.clone().clone()); // TODO: Try to remove clone
-        }
-
-        // Choose 3 random short questions
-        if short_questions.len() < 3 {
-            return Err(ServerError::Error("Could not find enough short questions".to_string()));
-        }
-
-        for _ in 0..3 {
-            let q = short_questions.choose(&mut rng).ok_or(ServerError::Error("Could not find questions".to_string()))?;
-            final_questions.push(q.clone().clone()); // TODO: Try to remove clone
-        }
-
-        // Choose 2 random long questions
-        if long_questions.len() < 2 {
-            return Err(ServerError::Error("Could not find enough long questions".to_string()));
-        }
-
-        for _ in 0..2 {
-            let q = long_questions.choose(&mut rng).ok_or(ServerError::Error("Could not find questions".to_string()))?;
-            final_questions.push(q.clone().clone()); // TODO: Try to remove clone
-        }
+        sqlx::query!(
+            "UPDATE onboard_data SET data = $1 WHERE onboard_code = $2",
+            json!({ "questions": questions_json }),
+            &id
+        )
+        .execute(&app_state.pool)
+        .await
+        .map_err(|_| ServerError::Error("Could not save questions".to_string()))?;
 
         Ok(Json(final_questions))
     }

@@ -1,5 +1,6 @@
 use poise::serenity_prelude::{CreateEmbed, Member};
 use poise::CreateReply;
+use serenity::all::UserId;
 
 use crate::checks;
 use crate::Context;
@@ -94,11 +95,23 @@ pub async fn approve(ctx: Context<'_>, member: Member, reason: String) -> Result
 
             tx.commit().await?;
 
+            // Try kicking the test bot from the server now
+            ctx.guild_id()
+                .ok_or("Failed to get guild")?
+                .kick_with_reason(
+                    &ctx.discord(),
+                    UserId(crate::config::CONFIG.test_bot),
+                    "Activated Paradise Protection Protocol",
+                )
+                .await?;
+
+            ctx.say("Oh great work in approving this bo-!").await?;
+
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
             ctx.say(format!(
                 "
-Oh great work in approving this bo-!
-
-*Paradise Protection Protocol activated, deploying defenses!!!
+*Paradise Protection Protocol activated, deploying defenses!!!*
 
 Oh well, good luck with the quiz: {}/admin/onboardquiz
                 ",
