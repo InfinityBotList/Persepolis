@@ -7,7 +7,8 @@ pub enum OnboardState {
     Started,
     QueueRemindedReviewer,
     Claimed,
+    InQuiz,
     PendingManagerReview, // Needed
-    Denied, // Needed
-    Completed, // Needed
+    Denied,               // Needed
+    Completed,            // Needed
 }

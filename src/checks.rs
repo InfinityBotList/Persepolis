@@ -1,9 +1,16 @@
-use std::{str::FromStr, num::NonZeroU64};
+use std::{num::NonZeroU64, str::FromStr};
 
-use poise::{serenity_prelude::{RoleId, GuildId, CreateEmbed}, CreateReply};
+use poise::{
+    serenity_prelude::{CreateEmbed, GuildId, RoleId},
+    CreateReply,
+};
 use sqlx::types::chrono;
 
-use crate::{Context, Error, config, states, setup::{setup_guild, delete_or_leave_guild}};
+use crate::{
+    config,
+    setup::{delete_or_leave_guild, setup_guild},
+    states, Context, Error,
+};
 
 pub async fn is_admin(ctx: Context<'_>) -> Result<bool, Error> {
     let row = sqlx::query!(
@@ -29,11 +36,12 @@ pub async fn onboardable(ctx: Context<'_>) -> Result<bool, Error> {
     .await?;
 
     if row.staff {
-        return Ok(true)
+        return Ok(true);
     }
 
     let is_staff = {
-        let member = ctx.discord()
+        let member = ctx
+            .discord()
             .cache
             .member(config::CONFIG.servers.main, ctx.author().id);
 
@@ -74,7 +82,7 @@ pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
 
 If you accidentally left the onboarding server, you can rejoin using {}/{}
                 ", 
-                    config::CONFIG.persepolis_domain, 
+                    config::CONFIG.persepolis_domain,
                     ctx.author().id
                 ).into()
             )
@@ -84,7 +92,9 @@ If you accidentally left the onboarding server, you can rejoin using {}/{}
 
     // Check if older than 1 hour
     if state.staff_onboard_last_start_time.is_some() {
-        let last_start_time = state.staff_onboard_last_start_time.ok_or("Invalid last start time")?;
+        let last_start_time = state
+            .staff_onboard_last_start_time
+            .ok_or("Invalid last start time")?;
 
         if last_start_time.timestamp() + 3600 < chrono::Utc::now().timestamp() {
             // They need to redo onboarding again... wipe their old progress and restart
@@ -105,7 +115,12 @@ If you accidentally left the onboarding server, you can rejoin using {}/{}
 
             // Check staff onboard guild
             if state.staff_onboard_guild.is_some() {
-                let guild_id = GuildId(state.staff_onboard_guild.ok_or("Invalid guild ID")?.parse::<NonZeroU64>()?);
+                let guild_id = GuildId(
+                    state
+                        .staff_onboard_guild
+                        .ok_or("Invalid guild ID")?
+                        .parse::<NonZeroU64>()?,
+                );
 
                 delete_or_leave_guild(&ctx.data().cache_http, guild_id).await?;
             }
@@ -124,20 +139,26 @@ If you accidentally left the onboarding server, you can rejoin using {}/{}
             return Ok(false);
         }
     }
-    
+
     if state.staff_onboard_guild.is_some() {
         // Check that bot is still in guild
-        let guild_id = GuildId(state.staff_onboard_guild.ok_or("Invalid guild ID")?.parse::<NonZeroU64>()?);
+        let guild_id = GuildId(
+            state
+                .staff_onboard_guild
+                .ok_or("Invalid guild ID")?
+                .parse::<NonZeroU64>()?,
+        );
 
         // This needs to be block-scoped explicitly because Guild is not Send
         let mut in_guild = false;
         {
-            let guild = ctx.discord()
-                .cache
-                .guild(guild_id);
+            let guild = ctx.discord().cache.guild(guild_id);
 
             if let Some(guild) = guild {
-                if guild.members.contains_key(&ctx.discord().cache.current_user().id) {
+                if guild
+                    .members
+                    .contains_key(&ctx.discord().cache.current_user().id)
+                {
                     // Bot is still in guild, so we can continue
                     in_guild = true;
                 }
@@ -173,32 +194,35 @@ If you accidentally left the onboarding server, you can rejoin using {}/{}
             return Ok(false);
         }
 
-        if guild_id != ctx.guild_id().ok_or("This command must be ran in a server!")? {
+        if guild_id
+            != ctx
+                .guild_id()
+                .ok_or("This command must be ran in a server!")?
+        {
             // They're not in the right guild, so we need to ask them to move
-            return Err(
-                format!(
-                    "You are not in the correct guild! Go to {}/{}",
-                    config::CONFIG.persepolis_domain,
-                    ctx.author().id
-                ).into());
+            return Err(format!(
+                "You are not in the correct guild! Go to {}/{}",
+                config::CONFIG.persepolis_domain,
+                ctx.author().id
+            )
+            .into());
         }
 
         Ok(true)
     } else {
         // Create a new server
-        let mut msg = ctx.send(
-            CreateReply::new()
-            .embed(
-                CreateEmbed::new()
-                .title("Onboarding Notice")
-                .description(
-                    ":yellow_circle: **Creating a new onboarding server**"
-                )
-                .color(serenity::model::Color::RED)
+        let mut msg = ctx
+            .send(
+                CreateReply::new().embed(
+                    CreateEmbed::new()
+                        .title("Onboarding Notice")
+                        .description(":yellow_circle: **Creating a new onboarding server**")
+                        .color(serenity::model::Color::RED),
+                ),
             )
-        ).await?
-        .into_message()
-        .await?;
+            .await?
+            .into_message()
+            .await?;
 
         sqlx::query!(
             "UPDATE users SET staff_onboard_session_code = NULL, staff_onboard_state = $1, staff_onboard_last_start_time = NOW() WHERE user_id = $2",

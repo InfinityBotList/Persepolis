@@ -6,7 +6,7 @@ CARGO_TARGET_GNU_LINKER="x86_64-unknown-linux-gnu-gcc"
 # Some sensible defaults, should be overrided per-project
 BINS ?= persepolis
 PROJ_NAME ?= persepolis
-HOST ?= 100.86.85.125
+HOST ?= 100.71.175.17
 
 all: 
 	@make cross

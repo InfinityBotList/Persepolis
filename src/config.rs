@@ -36,6 +36,23 @@ impl Default for Roles {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub enum QuestionData {
+    #[serde(rename = "short")]
+    Short,
+    #[serde(rename = "long")]
+    Long,
+    #[serde(rename = "multiple_choice")]
+    MultipleChoice(Vec<String>),
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Question {
+    pub question: String,
+    pub data: QuestionData,
+    pub pinned: bool, // Whether or not the question should be pinned/always present in the quiz
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Channels {
     /// Where onboardings are sent to for staff managers to moderate
@@ -62,6 +79,7 @@ pub struct Config {
     pub frontend_url: String,
     pub proxy_url: String,
     pub persepolis_domain: String,
+    pub questions: Vec<Question>,
 }
 
 impl Default for Config {
@@ -77,6 +95,7 @@ impl Default for Config {
             frontend_url: String::from("https://infinitybots.gg"),
             proxy_url: String::from("http://127.0.0.1:3219"),
             persepolis_domain: String::from("https://persepolis.infinitybots.gg"),
+            questions: vec![],
         }
     }
 }

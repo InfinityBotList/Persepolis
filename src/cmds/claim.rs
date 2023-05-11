@@ -1,31 +1,21 @@
 use std::time::Duration;
 
-use poise::CreateReply;
 use poise::serenity_prelude::{
-    ButtonStyle,
-    CreateActionRow,
-    CreateAttachment,
-    CreateButton,
-    CreateEmbed,
-    CreateEmbedFooter,
-    CreateWebhook,
-    ExecuteWebhook,
-    Member,
-    Mentionable,
+    ButtonStyle, CreateActionRow, CreateAttachment, CreateButton, CreateEmbed, CreateEmbedFooter,
+    CreateWebhook, ExecuteWebhook, Member, Mentionable,
 };
+use poise::CreateReply;
 
 use crate::checks;
 use crate::Context;
 use crate::Error;
 
-#[
-    poise::command(
-        prefix_command,
-        slash_command,
-        check = "checks::onboardable",
-        check = "checks::can_onboard",
-    )
-]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    check = "checks::onboardable",
+    check = "checks::can_onboard"
+)]
 pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
     let data = ctx.data();
 
@@ -133,7 +123,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                     .ok_or("Bot not found")?
                     .name
                     .clone()
-                };    
+                };
 
                 wh.execute(
                     &ctx.discord(),
@@ -146,7 +136,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                         )
                     )
                 ).await?;
-    
+
                 ctx.say("Great! With a real bot, things won't go this smoothly, but you can always remind people to test their bot! Now try claiming again, but this time use ``Force Claim``").await?; 
 
                 sqlx::query!(
@@ -155,7 +145,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                     ctx.author().id.to_string()
                 )
                 .execute(&data.pool)
-                .await?;    
+                .await?;
             }
 
             Ok(())
@@ -263,4 +253,3 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
         } // TODO, remove
     }
 }
-

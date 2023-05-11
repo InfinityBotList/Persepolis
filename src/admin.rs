@@ -1,6 +1,9 @@
-use std::num::NonZeroU64;
-use poise::{serenity_prelude::{User, GuildId, CreateMessage, CreateActionRow, CreateButton, ButtonStyle}, CreateReply};
 use crate::{checks, Context, Error};
+use poise::{
+    serenity_prelude::{ButtonStyle, CreateActionRow, CreateButton, CreateMessage, GuildId, User},
+    CreateReply,
+};
+use std::num::NonZeroU64;
 
 /// Guild base command
 #[poise::command(
@@ -19,7 +22,7 @@ pub async fn guild(_ctx: Context<'_>) -> Result<(), Error> {
     track_edits,
     prefix_command,
     slash_command,
-    check = "checks::is_admin",
+    check = "checks::is_admin"
 )]
 pub async fn staff_guildlist(ctx: Context<'_>) -> Result<(), Error> {
     let guilds = ctx.discord().cache.guilds();

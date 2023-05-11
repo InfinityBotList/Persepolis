@@ -1,23 +1,23 @@
-use std::{time::Duration, num::NonZeroU64};
+use std::{num::NonZeroU64, time::Duration};
 
-use log::{info, error};
+use log::{error, info};
 use poise::serenity_prelude::{FullEvent, GuildId};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
 use crate::cache::CacheHttpImpl;
 
-mod config;
-mod checks;
-mod help;
-mod states;
-mod crypto;
-mod setup;
-mod cache;
-mod server;
 mod admin;
-mod stats;
+mod cache;
+mod checks;
 mod cmds;
+mod config;
+mod crypto;
 mod finish;
+mod help;
+mod server;
+mod setup;
+mod states;
+mod stats;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -61,12 +61,7 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
             );
             if let Some(error) = error {
                 error!("Error in command `{}`: {:?}", ctx.command().name, error,);
-                let err = ctx
-                    .say(format!(
-                        "**{}**",
-                        error
-                    ))
-                    .await;
+                let err = ctx.say(format!("**{}**", error)).await;
 
                 if let Err(e) = err {
                     error!("Error while sending error message: {}", e);
@@ -88,7 +83,7 @@ async fn event_listener(event: &FullEvent, user_data: &Data) -> Result<(), Error
             ctx: _,
         } => {
             info!("Interaction received: {:?}", interaction.id());
-        },
+        }
         FullEvent::Ready {
             data_about_bot,
             ctx: _,
@@ -114,17 +109,14 @@ async fn event_listener(event: &FullEvent, user_data: &Data) -> Result<(), Error
                 user_data.pool.clone(),
                 user_data.cache_http.clone(),
             ));
-        },
+        }
         _ => {}
     }
 
     Ok(())
 }
 
-async fn clean_out(
-    pool: PgPool, 
-    cache_http: CacheHttpImpl
-) -> ! {
+async fn clean_out(pool: PgPool, cache_http: CacheHttpImpl) -> ! {
     let mut interval = tokio::time::interval(Duration::from_secs(30));
     loop {
         interval.tick().await;
@@ -135,10 +127,7 @@ async fn clean_out(
     }
 }
 
-async fn clean_out_impl(
-    pool: &PgPool,
-    cache_http: &CacheHttpImpl
-) -> Result<(), Error> {
+async fn clean_out_impl(pool: &PgPool, cache_http: &CacheHttpImpl) -> Result<(), Error> {
     let rows = sqlx::query!(
         "
 SELECT user_id, staff_onboard_guild FROM users
@@ -256,7 +245,6 @@ async fn main() {
                         .connect(&config::CONFIG.database_url)
                         .await
                         .expect("Could not initialize connection"),
-                    
                 })
             })
         },

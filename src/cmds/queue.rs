@@ -2,23 +2,17 @@ use crate::checks;
 use crate::Context;
 use crate::Error;
 
-use poise::CreateReply;
 use poise::serenity_prelude::{
-    CreateActionRow,
-    CreateButton,
-    CreateEmbed,
-    CreateEmbedFooter,
-    Mentionable,
+    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, Mentionable,
 };
+use poise::CreateReply;
 
-#[
-    poise::command(
-        prefix_command,
-        slash_command,
-        check = "checks::onboardable",
-        check = "checks::can_onboard",
-    )
-]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    check = "checks::onboardable",
+    check = "checks::can_onboard"
+)]
 pub async fn queue(ctx: Context<'_>) -> Result<(), Error> {
     let data = ctx.data();
 
@@ -32,10 +26,12 @@ pub async fn queue(ctx: Context<'_>) -> Result<(), Error> {
     .parse::<crate::states::OnboardState>()?;
 
     let bot_name = {
-        data.cache_http.cache.user(crate::config::CONFIG.test_bot)
-        .ok_or("Bot not found")?
-        .name
-        .clone()
+        data.cache_http
+            .cache
+            .user(crate::config::CONFIG.test_bot)
+            .ok_or("Bot not found")?
+            .name
+            .clone()
     };
 
     match onboard_state {
@@ -91,14 +87,16 @@ Since you seem new to this place, how about a nice look arou-?
 
             Ok(())
         }
-        crate::states::OnboardState::Started | crate::states::OnboardState::QueueRemindedReviewer => {
+        crate::states::OnboardState::Started
+        | crate::states::OnboardState::QueueRemindedReviewer => {
             let bot_name = {
-                data.cache_http.cache.user(crate::config::CONFIG.test_bot)
-                .ok_or("Bot not found")?
-                .name
-                .clone()
+                data.cache_http
+                    .cache
+                    .user(crate::config::CONFIG.test_bot)
+                    .ok_or("Bot not found")?
+                    .name
+                    .clone()
             };
-
 
             let bot_data = sqlx::query!(
                 "SELECT short, invite FROM bots WHERE bot_id = $1",
@@ -108,39 +106,51 @@ Since you seem new to this place, how about a nice look arou-?
             .await?;
 
             let embed = CreateEmbed::new()
-            .title(bot_name.to_string() + " [Sandbox Mode]")
-            .field("ID", crate::config::CONFIG.test_bot.to_string(), false)
-            .field("Short", bot_data.short, false)
-            .field("Owner", "N/A", false)
-            .field("Claimed by", "*You are free to test this bot. It is not claimed*", false)
-            .field("Approval Note", "Pls test me and make sure I work :heart:", true)
-            .field("Queue name", bot_name, true)
-            .field("Invite", format!("[Invite Bot]({})", bot_data.invite), true)
-            .footer(CreateEmbedFooter::new("TIP: You can use ibo!claim (or /claim) to claim this bot!"));
+                .title(bot_name.to_string() + " [Sandbox Mode]")
+                .field("ID", crate::config::CONFIG.test_bot.to_string(), false)
+                .field("Short", bot_data.short, false)
+                .field("Owner", "N/A", false)
+                .field(
+                    "Claimed by",
+                    "*You are free to test this bot. It is not claimed*",
+                    false,
+                )
+                .field(
+                    "Approval Note",
+                    "Pls test me and make sure I work :heart:",
+                    true,
+                )
+                .field("Queue name", bot_name, true)
+                .field("Invite", format!("[Invite Bot]({})", bot_data.invite), true)
+                .footer(CreateEmbedFooter::new(
+                    "TIP: You can use ibo!claim (or /claim) to claim this bot!",
+                ));
 
             ctx.send(
                 CreateReply::new()
-                .embed(embed)
-                .components(
-                    vec![
-                        CreateActionRow::Buttons(
-                            vec![
-                                CreateButton::new_link(bot_data.invite).label("Invite"),
-                                CreateButton::new_link(format!("{}/bots/{}", crate::config::CONFIG.frontend_url, crate::config::CONFIG.test_bot)).label("View Page"),
-                            ]
-                        )
-                    ]
-                )
-            ).await?;
+                    .embed(embed)
+                    .components(vec![CreateActionRow::Buttons(vec![
+                        CreateButton::new_link(bot_data.invite).label("Invite"),
+                        CreateButton::new_link(format!(
+                            "{}/bots/{}",
+                            crate::config::CONFIG.frontend_url,
+                            crate::config::CONFIG.test_bot
+                        ))
+                        .label("View Page"),
+                    ])]),
+            )
+            .await?;
 
             Ok(())
-        },
+        }
         _ => {
             let bot_name = {
-                data.cache_http.cache.user(crate::config::CONFIG.test_bot)
-                .ok_or("Bot not found")?
-                .name
-                .clone()
+                data.cache_http
+                    .cache
+                    .user(crate::config::CONFIG.test_bot)
+                    .ok_or("Bot not found")?
+                    .name
+                    .clone()
             };
 
             let bot_data = sqlx::query!(
@@ -151,30 +161,36 @@ Since you seem new to this place, how about a nice look arou-?
             .await?;
 
             let embed = CreateEmbed::new()
-            .title(bot_name.to_string() + " [Sandbox Mode]")
-            .field("ID", crate::config::CONFIG.test_bot.to_string(), false)
-            .field("Short", bot_data.short, false)
-            .field("Owner", "N/A", false)
-            .field("Claimed by", ctx.author().mention().to_string(), false)
-            .field("Approval Note", "Pls test me and make sure I work :heart:", true)
-            .field("Queue name", bot_name, true)
-            .field("Invite", format!("[Invite Bot]({})", bot_data.invite), true)
-            .footer(CreateEmbedFooter::new("TIP: Test this bot now. Then approve/deny it"));
+                .title(bot_name.to_string() + " [Sandbox Mode]")
+                .field("ID", crate::config::CONFIG.test_bot.to_string(), false)
+                .field("Short", bot_data.short, false)
+                .field("Owner", "N/A", false)
+                .field("Claimed by", ctx.author().mention().to_string(), false)
+                .field(
+                    "Approval Note",
+                    "Pls test me and make sure I work :heart:",
+                    true,
+                )
+                .field("Queue name", bot_name, true)
+                .field("Invite", format!("[Invite Bot]({})", bot_data.invite), true)
+                .footer(CreateEmbedFooter::new(
+                    "TIP: Test this bot now. Then approve/deny it",
+                ));
 
             ctx.send(
                 CreateReply::new()
-                .embed(embed)
-                .components(
-                    vec![
-                        CreateActionRow::Buttons(
-                            vec![
-                                CreateButton::new_link(bot_data.invite).label("Invite"),
-                                CreateButton::new_link(format!("{}/bots/{}", crate::config::CONFIG.frontend_url, crate::config::CONFIG.test_bot)).label("View Page"),
-                            ]
-                        )
-                    ]
-                )
-            ).await?;
+                    .embed(embed)
+                    .components(vec![CreateActionRow::Buttons(vec![
+                        CreateButton::new_link(bot_data.invite).label("Invite"),
+                        CreateButton::new_link(format!(
+                            "{}/bots/{}",
+                            crate::config::CONFIG.frontend_url,
+                            crate::config::CONFIG.test_bot
+                        ))
+                        .label("View Page"),
+                    ])]),
+            )
+            .await?;
 
             Ok(())
         }

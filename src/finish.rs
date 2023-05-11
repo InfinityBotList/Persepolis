@@ -5,8 +5,8 @@ use crate::Error;
 
 pub async fn check_code(
     pool: &PgPool,
-    user_id: UserId, 
-    inputted_code: &str
+    user_id: UserId,
+    inputted_code: &str,
 ) -> Result<bool, Error> {
     let inputted_code = inputted_code.replace(' ', "");
 
@@ -24,23 +24,38 @@ pub async fn check_code(
 
     if let Some(code) = code.staff_onboard_session_code {
         // Take last 73 characters
-        let mut code = code
-            .chars()
-            .skip(code.len() - 73)
-            .collect::<String>();
+        let mut code = code.chars().skip(code.len() - 73).collect::<String>();
 
         code.replace_range(2..3, "r");
         code.replace_range(
             19..20,
-            &user_id.0.to_string().chars().next().unwrap_or_default().to_string(),
+            &user_id
+                .0
+                .to_string()
+                .chars()
+                .next()
+                .unwrap_or_default()
+                .to_string(),
         );
         code.replace_range(
             21..22,
-            &user_id.0.to_string().chars().nth(1).unwrap_or_default().to_string(),
+            &user_id
+                .0
+                .to_string()
+                .chars()
+                .nth(1)
+                .unwrap_or_default()
+                .to_string(),
         );
         code.replace_range(
             40..41,
-            &user_id.0.to_string().chars().nth(6).unwrap_or_default().to_string(),
+            &user_id
+                .0
+                .to_string()
+                .chars()
+                .nth(6)
+                .unwrap_or_default()
+                .to_string(),
         );
         code.replace_range(39..40, "x");
 

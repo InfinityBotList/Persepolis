@@ -2,17 +2,14 @@ use crate::checks;
 use crate::Context;
 use crate::Error;
 
-#[
-    poise::command(
-        prefix_command,
-        slash_command,
-        check = "checks::onboardable",
-        check = "checks::can_onboard",
-    )
-]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    check = "checks::onboardable",
+    check = "checks::can_onboard"
+)]
 pub async fn staffguide(ctx: Context<'_>) -> Result<(), Error> {
-    let onboard_code =
-        crate::crypto::gen_random(76); // Generate 76 character random string for onboard code
+    let onboard_code = crate::crypto::gen_random(76); // Generate 76 character random string for onboard code
 
     // Get first 20 characters of the onboard code as onboard_fragment
     let onboard_fragment = onboard_code.chars().take(20).collect::<String>();
