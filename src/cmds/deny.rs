@@ -103,7 +103,7 @@ pub async fn deny(ctx: Context<'_>, member: Member, reason: String) -> Result<()
                 "
 *Paradise Protection Protocol activated, deploying defenses!!!*
 
-Oh well, good luck with the quiz: {}/admin/onboardquiz
+Oh well, good luck with the quiz: {}/admin/onboard/quiz
                 ",
                 crate::config::CONFIG.frontend_url
             ))
@@ -115,7 +115,7 @@ Oh well, good luck with the quiz: {}/admin/onboardquiz
             "
 *Paradise Protection Protocol activated*
 
-Visit {}/admin/onboardquiz to take the quiz!
+Visit {}/admin/onboard/quiz to take the quiz!
                 ",
             crate::config::CONFIG.frontend_url
         )
