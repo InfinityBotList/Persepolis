@@ -2,8 +2,8 @@ use once_cell::sync::Lazy;
 use poise::serenity_prelude::GuildId;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Write, num::NonZeroU64};
-
 use crate::Error;
+use ts_rs::TS;
 
 /// Global config object
 pub static CONFIG: Lazy<Config> = Lazy::new(|| Config::load().expect("Failed to load config"));
@@ -36,7 +36,8 @@ impl Default for Roles {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = ".generated/QuestionData.ts")]
 pub enum QuestionData {
     #[serde(rename = "short")]
     Short,
@@ -46,7 +47,8 @@ pub enum QuestionData {
     MultipleChoice(Vec<String>),
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = ".generated/Question.ts")]
 pub struct Question {
     pub question: String,
     pub data: QuestionData,
