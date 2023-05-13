@@ -35,8 +35,8 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
         .route("/:uid/code", get(get_onboard_code))
         .route("/confirm-login", get(confirm_login))
         .route(
-            "/paradise-protection",
-            post(start_paradise_protection_protocol),
+            "/quiz",
+            post(create_quiz),
         )
         .route("/resp/:rid", get(get_onboard_response))
         .with_state(shared_state)
@@ -307,7 +307,7 @@ struct CreateQuizRequest {
 }
 
 #[axum_macros::debug_handler]
-async fn start_paradise_protection_protocol(
+async fn create_quiz(
     State(app_state): State<Arc<AppState>>,
     Json(create_quiz_req): Json<CreateQuizRequest>,
 ) -> Result<Json<Vec<Question>>, ServerError> {
