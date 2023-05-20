@@ -52,6 +52,7 @@ pub enum QuestionData {
 pub struct Question {
     pub question: String,
     pub data: QuestionData,
+    pub guidance: Option<String>, // Marking scheme of the question
     pub pinned: bool, // Whether or not the question should be pinned/always present in the quiz
 }
 

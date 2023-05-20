@@ -307,10 +307,18 @@ struct CreateQuizRequest {
     user_id: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = ".generated/PublicQuestion.ts")]
+pub struct PublicQuestion {
+    pub question: String,
+    pub data: QuestionData,
+    pub pinned: bool, // Whether or not the question should be pinned/always present in the quiz
+}
+
 #[derive(Serialize, TS)]
 #[ts(export, export_to = ".generated/CreateQuizResponse.ts")]
 struct CreateQuizResponse {
-    questions: Vec<Question>,
+    questions: Vec<PublicQuestion>,
     cached: bool
 }
 
@@ -362,7 +370,7 @@ async fn create_quiz(
 
             for q in question_vals {
                 // Parse question as Question
-                let question: Question = serde_json::from_value(q.clone()).map_err(|_| {
+                let question: PublicQuestion = serde_json::from_value(q.clone()).map_err(|_| {
                     ServerError::Error("Fatal error: Could not parse question".to_string())
                 })?;
     
@@ -451,8 +459,17 @@ async fn create_quiz(
     .await
     .map_err(|_| ServerError::Error("Could not save questions".to_string()))?;
 
+    // Convert final questions to PublicQuestion
+
     Ok(Json(CreateQuizResponse {
-        questions: final_questions,
+        questions: final_questions
+        .iter()
+        .map(|q| PublicQuestion {
+            question: q.question.clone(),
+            data: q.data.clone(),
+            pinned: q.pinned,
+        })
+        .collect::<Vec<PublicQuestion>>(),
         cached: false,
     }))
 }
