@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, sync::Arc, collections::HashMap};
+use std::{collections::HashMap, num::NonZeroU64, sync::Arc};
 
 use axum::{
     extract::{Path, Query, State},
@@ -12,7 +12,7 @@ use log::info;
 use poise::serenity_prelude::{AddMember, GuildId, UserId};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
-use serenity::json::json;
+use serenity::{all::ChannelId, json::json};
 use sqlx::PgPool;
 use tower_http::cors::{Any, CorsLayer};
 use ts_rs::TS;
@@ -35,10 +35,7 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
         .route("/:uid", get(create_login))
         .route("/:uid/code", get(get_onboard_code))
         .route("/confirm-login", get(confirm_login))
-        .route(
-            "/quiz",
-            post(create_quiz),
-        )
+        .route("/quiz", post(create_quiz))
         .route("/resp/:rid", get(get_onboard_response))
         .route("/submit", post(submit_onboarding))
         .with_state(shared_state)
@@ -284,24 +281,36 @@ async fn get_onboard_code(
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = ".generated/OnboardResponse.ts")]
+struct OnboardResponse {
+    user_id: String,
+    questions: Vec<Question>,
+    answer: HashMap<String, String>,
+    data: HashMap<String, String>,
+}
+
 async fn get_onboard_response(
     State(app_state): State<Arc<AppState>>,
     Path(rid): Path<String>,
-) -> Result<Json<serde_json::Value>, ServerError> {
+) -> Result<Json<OnboardResponse>, ServerError> {
     let resp = sqlx::query!(
-        "SELECT data, user_id FROM onboard_data WHERE onboard_code = $1",
+        "SELECT data, questions, answers, user_id FROM onboard_data WHERE onboard_code = $1",
         rid.to_string()
     )
     .fetch_one(&app_state.pool)
     .await
     .map_err(|_| ServerError::Error("Could not find onboarding response".to_string()))?;
 
-    let json = serde_json::json!({
-        "user_id": resp.user_id,
-        "data": resp.data
-    });
-
-    Ok(Json(json))
+    Ok(Json(OnboardResponse {
+        user_id: resp.user_id,
+        questions: serde_json::from_value(resp.questions)
+            .map_err(|_| ServerError::Error("Could not parse qustions".to_string()))?,
+        answer: serde_json::from_value(resp.answers)
+            .map_err(|_| ServerError::Error("Could not parse answers".to_string()))?,
+        data: serde_json::from_value(resp.data)
+            .map_err(|_| ServerError::Error("Could not parse data".to_string()))?,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -322,7 +331,7 @@ pub struct PublicQuestion {
 #[ts(export, export_to = ".generated/CreateQuizResponse.ts")]
 struct CreateQuizResponse {
     questions: Vec<PublicQuestion>,
-    cached: bool
+    cached: bool,
 }
 
 #[axum_macros::debug_handler]
@@ -362,7 +371,12 @@ async fn create_quiz(
         ServerError::Error("Fatal error: Could not find onboarding response".to_string())
     })?;
 
-    let quiz_ver = resp.questions.get("quiz_ver").unwrap_or(&json!(0)).as_i64().unwrap_or(0);
+    let quiz_ver = resp
+        .questions
+        .get("quiz_ver")
+        .unwrap_or(&json!(0))
+        .as_i64()
+        .unwrap_or(0);
 
     if quiz_ver == 1 {
         let obj = json!([]);
@@ -376,14 +390,14 @@ async fn create_quiz(
                 let question: PublicQuestion = serde_json::from_value(q.clone()).map_err(|_| {
                     ServerError::Error("Fatal error: Could not parse question".to_string())
                 })?;
-    
+
                 questions.push(question);
             }
-    
+
             return Ok(Json(CreateQuizResponse {
                 questions,
                 cached: true,
-            }));     
+            }));
         }
     }
 
@@ -416,9 +430,18 @@ async fn create_quiz(
 
         let mut rng = rand::thread_rng();
 
-        let mcq_choice: Vec<&Question> = mcq_questions.choose_multiple(&mut rng, 4).cloned().collect();
-        let short_choice: Vec<&Question> = short_questions.choose_multiple(&mut rng, 3).cloned().collect();
-        let long_choice: Vec<&Question> = long_questions.choose_multiple(&mut rng, 2).cloned().collect();
+        let mcq_choice: Vec<&Question> = mcq_questions
+            .choose_multiple(&mut rng, 4)
+            .cloned()
+            .collect();
+        let short_choice: Vec<&Question> = short_questions
+            .choose_multiple(&mut rng, 3)
+            .cloned()
+            .collect();
+        let long_choice: Vec<&Question> = long_questions
+            .choose_multiple(&mut rng, 2)
+            .cloned()
+            .collect();
 
         for q in mcq_choice {
             final_questions.push(q.clone()); // TODO: Try to remove clone
@@ -466,17 +489,16 @@ async fn create_quiz(
 
     Ok(Json(CreateQuizResponse {
         questions: final_questions
-        .iter()
-        .map(|q| PublicQuestion {
-            question: q.question.clone(),
-            data: q.data.clone(),
-            pinned: q.pinned,
-        })
-        .collect::<Vec<PublicQuestion>>(),
+            .iter()
+            .map(|q| PublicQuestion {
+                question: q.question.clone(),
+                data: q.data.clone(),
+                pinned: q.pinned,
+            })
+            .collect::<Vec<PublicQuestion>>(),
         cached: false,
     }))
 }
-
 
 #[derive(Deserialize)]
 struct SubmitOnboarding {
@@ -529,7 +551,12 @@ async fn submit_onboarding(
         ServerError::Error("Fatal error: Could not find onboarding response".to_string())
     })?;
 
-    let quiz_ver = resp.questions.get("quiz_ver").unwrap_or(&json!(0)).as_i64().unwrap_or(0);
+    let quiz_ver = resp
+        .questions
+        .get("quiz_ver")
+        .unwrap_or(&json!(0))
+        .as_i64()
+        .unwrap_or(0);
 
     if quiz_ver != 1 {
         // Corrupt data, reset questions and error
@@ -542,12 +569,25 @@ async fn submit_onboarding(
         .await
         .map_err(|_| ServerError::Error("Could not reset questions".to_string()))?;
 
-        return Err(ServerError::Error("Quiz could not be found and hence has been reset, reload the page and try again".to_string()));
+        return Err(ServerError::Error(
+            "Quiz could not be found and hence has been reset, reload the page and try again"
+                .to_string(),
+        ));
     }
 
-    let user_id_snow = submit_onboarding_req.user_id.parse::<NonZeroU64>().map_err(|_| ServerError::Error("Invalid user id".to_string()))?;
+    let user_id_snow = submit_onboarding_req
+        .user_id
+        .parse::<NonZeroU64>()
+        .map_err(|_| ServerError::Error("Invalid user id".to_string()))?;
 
-    if !crate::finish::check_code(&app_state.pool, UserId(user_id_snow), &submit_onboarding_req.sv_code).await.map_err(|e| ServerError::Error(e.to_string()))? {
+    if !crate::finish::check_code(
+        &app_state.pool,
+        UserId(user_id_snow),
+        &submit_onboarding_req.sv_code,
+    )
+    .await
+    .map_err(|e| ServerError::Error(e.to_string()))?
+    {
         // Incorrect code
         return Err(ServerError::Error("Incorrect code".to_string()));
     }
@@ -555,11 +595,10 @@ async fn submit_onboarding(
     // Next parse the questions in DB
     let obj = json!([]);
     let quiz_qvals = resp.questions.get("questions").unwrap_or(&obj).as_array();
-    
+
     let mut questions = vec![];
 
     if let Some(question_vals) = quiz_qvals {
-
         for q in question_vals {
             // Parse question as Question
             let question: Question = serde_json::from_value(q.clone()).map_err(|_| {
@@ -572,33 +611,49 @@ async fn submit_onboarding(
 
     // Now check that every answer is present, adding them to a vec in the order that they have been found
     for question in questions {
-        let answer = submit_onboarding_req.quiz_answers.get(&question.question).ok_or(ServerError::Error("Missing answer for ".to_string() + &question.question))?;
+        let answer = submit_onboarding_req
+            .quiz_answers
+            .get(&question.question)
+            .ok_or(ServerError::Error(
+                "Missing answer for ".to_string() + &question.question,
+            ))?;
 
         match question.data {
             QuestionData::Short => {
                 if answer.len() < 50 {
-                    return Err(ServerError::Error("Short answer questions must be at least 50 characters long".to_string()));
+                    return Err(ServerError::Error(
+                        "Short answer questions must be at least 50 characters long".to_string(),
+                    ));
                 }
-            },
+            }
             QuestionData::Long => {
                 if answer.len() < 750 {
-                    return Err(ServerError::Error("Long answer questions must be at least 750 characters long".to_string()));
+                    return Err(ServerError::Error(
+                        "Long answer questions must be at least 750 characters long".to_string(),
+                    ));
                 }
-            },
+            }
             QuestionData::MultipleChoice(ref choices) => {
                 if !choices.contains(&answer) {
-                    return Err(ServerError::Error("Invalid answer for multiple choice question".to_string()));
+                    return Err(ServerError::Error(
+                        "Invalid answer for multiple choice question".to_string(),
+                    ));
                 }
-            },
+            }
         }
     }
 
     // Now we can save the answers
-    let mut tx = app_state.pool.begin().await.map_err(|_| ServerError::Error("Could not start transaction".to_string()))?;
+    let mut tx = app_state
+        .pool
+        .begin()
+        .await
+        .map_err(|_| ServerError::Error("Could not start transaction".to_string()))?;
 
     sqlx::query!(
         "UPDATE onboard_data SET answers = $1 WHERE onboard_code = $2",
-        serde_json::to_value(submit_onboarding_req.quiz_answers).map_err(|_| ServerError::Error("Could not serialize answers".to_string()))?,
+        serde_json::to_value(submit_onboarding_req.quiz_answers)
+            .map_err(|_| ServerError::Error("Could not serialize answers".to_string()))?,
         &id
     )
     .execute(&mut tx)
@@ -615,7 +670,20 @@ async fn submit_onboarding(
     .await
     .map_err(|_| ServerError::Error("Could not update state".to_string()))?;
 
-    tx.commit().await.map_err(|_| ServerError::Error("Could not commit transaction".to_string()))?;
+    // Send message on discord
+    ChannelId(crate::config::CONFIG.channels.onboarding_channel).say(
+        &app_state.cache_http,
+        format!(
+            "User <@{}> has submitted their onboarding quiz. Please see {}/admin/onboard/resp?id={} to review it, then use the ``/admin approve/deny`` commands to approve or deny it.", 
+            submit_onboarding_req.user_id,
+            crate::config::CONFIG.frontend_url,
+            id
+        )
+    ).await.map_err(|_| ServerError::Error("Could not send message on discord".to_string()))?;
+
+    tx.commit()
+        .await
+        .map_err(|_| ServerError::Error("Could not commit transaction".to_string()))?;
 
     Ok(ServerResponse::NoContent)
 }
