@@ -12,7 +12,7 @@ use log::info;
 use poise::serenity_prelude::{AddMember, GuildId, UserId};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
-use serenity::{all::ChannelId, json::json};
+use serenity::{all::ChannelId, json::json, builder::EditGuild};
 use sqlx::PgPool;
 use tower_http::cors::{Any, CorsLayer};
 use ts_rs::TS;
@@ -514,7 +514,7 @@ async fn submit_onboarding(
     Json(submit_onboarding_req): Json<SubmitOnboarding>,
 ) -> Result<ServerResponse, ServerError> {
     let rec = sqlx::query!(
-        "SELECT banned, staff_onboard_state, staff_onboard_current_onboard_resp_id FROM users WHERE user_id = $1 AND api_token = $2",
+        "SELECT banned, staff_onboard_state, staff_onboard_guild, staff_onboard_current_onboard_resp_id FROM users WHERE user_id = $1 AND api_token = $2",
         submit_onboarding_req.user_id,
         submit_onboarding_req.token
     )
@@ -610,7 +610,7 @@ async fn submit_onboarding(
     }
 
     // Now check that every answer is present, adding them to a vec in the order that they have been found
-    for question in questions {
+    for question in &questions {
         let answer = submit_onboarding_req
             .quiz_answers
             .get(&question.question)
@@ -651,7 +651,10 @@ async fn submit_onboarding(
         .map_err(|_| ServerError::Error("Could not start transaction".to_string()))?;
 
     sqlx::query!(
-        "UPDATE onboard_data SET answers = $1 WHERE onboard_code = $2",
+        "UPDATE onboard_data SET questions = $1, answers = $2 WHERE onboard_code = $3",
+        serde_json::to_value(questions).map_err(|_| {
+            ServerError::Error("Fatal error: Could not serialize questions".to_string())
+        })?,
         serde_json::to_value(submit_onboarding_req.quiz_answers)
             .map_err(|_| ServerError::Error("Could not serialize answers".to_string()))?,
         &id
@@ -684,6 +687,28 @@ async fn submit_onboarding(
     tx.commit()
         .await
         .map_err(|_| ServerError::Error("Could not commit transaction".to_string()))?;
+
+    // Transfer guild ownership
+    let guild_id_snow = rec
+        .staff_onboard_guild
+        .ok_or(ServerError::Error(
+            "Could not find guild id".to_string(),
+        ))?
+        .parse::<NonZeroU64>()
+        .map_err(|_| ServerError::Error("Invalid guild id".to_string()))?;
+
+    GuildId(guild_id_snow).edit(
+        &app_state.cache_http,
+        EditGuild::default()
+            .owner(UserId(user_id_snow))
+    )
+    .await
+    .map_err(|_| ServerError::Error("Could not transfer guild ownership".to_string()))?;
+
+    // Leave server
+    crate::setup::delete_or_leave_guild(&app_state.cache_http, GuildId(guild_id_snow))
+        .await
+        .map_err(|_| ServerError::Error("Could not leave guild".to_string()))?;
 
     Ok(ServerResponse::NoContent)
 }
