@@ -12,7 +12,7 @@ use log::info;
 use poise::serenity_prelude::{AddMember, GuildId, UserId};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
-use serenity::{all::ChannelId, json::json, builder::EditGuild};
+use serenity::{all::ChannelId, json::json};
 use sqlx::PgPool;
 use tower_http::cors::{Any, CorsLayer};
 use ts_rs::TS;
@@ -687,28 +687,6 @@ async fn submit_onboarding(
     tx.commit()
         .await
         .map_err(|_| ServerError::Error("Could not commit transaction".to_string()))?;
-
-    // Transfer guild ownership
-    let guild_id_snow = rec
-        .staff_onboard_guild
-        .ok_or(ServerError::Error(
-            "Could not find guild id".to_string(),
-        ))?
-        .parse::<NonZeroU64>()
-        .map_err(|_| ServerError::Error("Invalid guild id".to_string()))?;
-
-    GuildId(guild_id_snow).edit(
-        &app_state.cache_http,
-        EditGuild::default()
-            .owner(UserId(user_id_snow))
-    )
-    .await
-    .map_err(|_| ServerError::Error("Could not transfer guild ownership".to_string()))?;
-
-    // Leave server
-    crate::setup::delete_or_leave_guild(&app_state.cache_http, GuildId(guild_id_snow))
-        .await
-        .map_err(|_| ServerError::Error("Could not leave guild".to_string()))?;
 
     Ok(ServerResponse::NoContent)
 }
