@@ -45,6 +45,24 @@ pub async fn queue(ctx: Context<'_>) -> Result<(), Error> {
 Since you seem new to this place, how about a nice look arou-?                    
                     "
                 )
+            ).await?;
+
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+            ctx.send(
+                CreateReply::new()
+                .content("Whoa there! Look at that! There's a new bot to review!!! 
+
+**Here are the general steps to follow:**
+
+1. Type ``/queue`` (or ``ibo!queue``) to see the queue. 
+2. Invite the bot to the server (if the invite fails due to lacking verification/anti-spam/whatever, just deny the bot)
+3. Then use ``/claim`` (or ``ibo!claim``) to claim the bot.
+4. Test the bot in question
+5. Approve or deny the bot using ``/approve`` or ``/deny`` (or ``ibo!approve`` or ``ibo!deny``)
+
+**You must complete this challenge within 1 hour. Using testing commands properly will reset the timer.**
+                ")
                 .embed(
                     CreateEmbed::new()
                     .title("Bot Resubmitted")
@@ -61,21 +79,8 @@ Since you seem new to this place, how about a nice look arou-?
                     .footer(CreateEmbedFooter::new("Are you ready to take on *this* challenge, young padawan?"))
                     .color(0xA020F0)
                 )
-            ).await?;
-
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
-            ctx.say("Whoa there! Look at that! There's a new bot to review!!! 
-
-**Here are the general steps to follow:**
-
-1. Type ``/queue`` (or ``ibo!queue``) to see the queue. 
-2. Invite the bot to the server (if the invite fails due to lacking verification/anti-spam/whatever, just deny the bot)
-3. Then use ``/claim`` (or ``ibo!claim``) to claim the bot.
-4. Test the bot in question
-5. Approve or deny the bot using ``/approve`` or ``/deny`` (or ``ibo!approve`` or ``ibo!deny``)
-
-**You must complete this challenge within 1 hour. Using testing commands properly will reset the timer.**").await?;
+            )
+            .await?;
 
             sqlx::query!(
                 "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
