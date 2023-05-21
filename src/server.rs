@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, sync::Arc};
+use std::{num::NonZeroU64, sync::Arc, collections::HashMap};
 
 use axum::{
     extract::{Path, Query, State},
@@ -40,6 +40,7 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
             post(create_quiz),
         )
         .route("/resp/:rid", get(get_onboard_response))
+        .route("/submit", post(submit_onboarding))
         .with_state(shared_state)
         .layer(
             CorsLayer::new()
@@ -74,12 +75,14 @@ impl IntoResponse for ServerError {
 
 enum ServerResponse {
     Response(String),
+    NoContent,
 }
 
 impl IntoResponse for ServerResponse {
     fn into_response(self) -> Response {
         match self {
             ServerResponse::Response(e) => (StatusCode::OK, e).into_response(),
+            ServerResponse::NoContent => (StatusCode::NO_CONTENT, "").into_response(),
         }
     }
 }
@@ -472,4 +475,147 @@ async fn create_quiz(
         .collect::<Vec<PublicQuestion>>(),
         cached: false,
     }))
+}
+
+
+#[derive(Deserialize)]
+struct SubmitOnboarding {
+    token: String,
+    user_id: String,
+    quiz_answers: HashMap<String, String>,
+    sv_code: String,
+}
+
+#[axum_macros::debug_handler]
+async fn submit_onboarding(
+    State(app_state): State<Arc<AppState>>,
+    Json(submit_onboarding_req): Json<SubmitOnboarding>,
+) -> Result<ServerResponse, ServerError> {
+    let rec = sqlx::query!(
+        "SELECT banned, staff_onboard_state, staff_onboard_current_onboard_resp_id FROM users WHERE user_id = $1 AND api_token = $2",
+        submit_onboarding_req.user_id,
+        submit_onboarding_req.token
+    )
+    .fetch_one(&app_state.pool)
+    .await
+    .map_err(|_| ServerError::Error("Invalid user/token combination? Consider logging out and logging in again?".to_string()))?;
+
+    if rec.banned {
+        return Err(ServerError::Error(
+            "You are banned from Infinity Bot List".to_string(),
+        ));
+    }
+
+    if rec.staff_onboard_state != crate::states::OnboardState::InQuiz.to_string() {
+        return Err(ServerError::Error(
+            "Paradise Protection Protocol is not enabled right now".to_string(),
+        ));
+    }
+
+    let id = rec
+        .staff_onboard_current_onboard_resp_id
+        .ok_or(ServerError::Error(
+            "Could not find onboard_resp_id".to_string(),
+        ))?;
+
+    // Check onboard_resp with corresponding resp id
+    let resp = sqlx::query!(
+        "SELECT questions FROM onboard_data WHERE onboard_code = $1",
+        id
+    )
+    .fetch_one(&app_state.pool)
+    .await
+    .map_err(|_| {
+        ServerError::Error("Fatal error: Could not find onboarding response".to_string())
+    })?;
+
+    let quiz_ver = resp.questions.get("quiz_ver").unwrap_or(&json!(0)).as_i64().unwrap_or(0);
+
+    if quiz_ver != 1 {
+        // Corrupt data, reset questions and error
+        sqlx::query!(
+            "UPDATE onboard_data SET questions = $1 WHERE onboard_code = $2",
+            json!({}),
+            &id
+        )
+        .execute(&app_state.pool)
+        .await
+        .map_err(|_| ServerError::Error("Could not reset questions".to_string()))?;
+
+        return Err(ServerError::Error("Quiz could not be found and hence has been reset, reload the page and try again".to_string()));
+    }
+
+    let user_id_snow = submit_onboarding_req.user_id.parse::<NonZeroU64>().map_err(|_| ServerError::Error("Invalid user id".to_string()))?;
+
+    if !crate::finish::check_code(&app_state.pool, UserId(user_id_snow), &submit_onboarding_req.sv_code).await.map_err(|e| ServerError::Error(e.to_string()))? {
+        // Incorrect code
+        return Err(ServerError::Error("Incorrect code".to_string()));
+    }
+
+    // Next parse the questions in DB
+    let obj = json!([]);
+    let quiz_qvals = resp.questions.get("questions").unwrap_or(&obj).as_array();
+    
+    let mut questions = vec![];
+
+    if let Some(question_vals) = quiz_qvals {
+
+        for q in question_vals {
+            // Parse question as Question
+            let question: Question = serde_json::from_value(q.clone()).map_err(|_| {
+                ServerError::Error("Fatal error: Could not parse question".to_string())
+            })?;
+
+            questions.push(question);
+        }
+    }
+
+    // Now check that every answer is present, adding them to a vec in the order that they have been found
+    for question in questions {
+        let answer = submit_onboarding_req.quiz_answers.get(&question.question).ok_or(ServerError::Error("Missing answer for ".to_string() + &question.question))?;
+
+        match question.data {
+            QuestionData::Short => {
+                if answer.len() < 50 {
+                    return Err(ServerError::Error("Short answer questions must be at least 50 characters long".to_string()));
+                }
+            },
+            QuestionData::Long => {
+                if answer.len() < 750 {
+                    return Err(ServerError::Error("Long answer questions must be at least 750 characters long".to_string()));
+                }
+            },
+            QuestionData::MultipleChoice(ref choices) => {
+                if !choices.contains(&answer) {
+                    return Err(ServerError::Error("Invalid answer for multiple choice question".to_string()));
+                }
+            },
+        }
+    }
+
+    // Now we can save the answers
+    let mut tx = app_state.pool.begin().await.map_err(|_| ServerError::Error("Could not start transaction".to_string()))?;
+
+    sqlx::query!(
+        "UPDATE onboard_data SET answers = $1 WHERE onboard_code = $2",
+        serde_json::to_value(submit_onboarding_req.quiz_answers).map_err(|_| ServerError::Error("Could not serialize answers".to_string()))?,
+        &id
+    )
+    .execute(&mut tx)
+    .await
+    .map_err(|_| ServerError::Error("Could not save answers".to_string()))?;
+
+    // Set state to PendingManagerReview
+    sqlx::query!(
+        "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
+        crate::states::OnboardState::PendingManagerReview.to_string(),
+        submit_onboarding_req.user_id
+    )
+    .execute(&mut tx)
+    .await
+    .map_err(|_| ServerError::Error("Could not update state".to_string()))?;
+
+    tx.commit().await.map_err(|_| ServerError::Error("Could not commit transaction".to_string()))?;
+
+    Ok(ServerResponse::NoContent)
 }
