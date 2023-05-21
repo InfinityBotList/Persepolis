@@ -13,7 +13,7 @@ use poise::serenity_prelude::{AddMember, GuildId, UserId};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use serenity::{all::ChannelId, json::json};
-use sqlx::PgPool;
+use sqlx::{PgPool, types::chrono::Utc};
 use tower_http::cors::{Any, CorsLayer};
 use ts_rs::TS;
 
@@ -288,6 +288,7 @@ struct OnboardResponse {
     questions: Vec<Question>,
     answer: HashMap<String, String>,
     data: HashMap<String, String>,
+    meta: OnboardingMeta
 }
 
 async fn get_onboard_response(
@@ -295,7 +296,7 @@ async fn get_onboard_response(
     Path(rid): Path<String>,
 ) -> Result<Json<OnboardResponse>, ServerError> {
     let resp = sqlx::query!(
-        "SELECT data, questions, answers, user_id FROM onboard_data WHERE onboard_code = $1",
+        "SELECT data, questions, answers, meta, user_id FROM onboard_data WHERE onboard_code = $1",
         rid.to_string()
     )
     .fetch_one(&app_state.pool)
@@ -310,6 +311,8 @@ async fn get_onboard_response(
             .map_err(|_| ServerError::Error("Could not parse answers".to_string()))?,
         data: serde_json::from_value(resp.data)
             .map_err(|_| ServerError::Error("Could not parse data".to_string()))?,
+        meta: serde_json::from_value(resp.meta)
+            .map_err(|_| ServerError::Error("Could not parse meta".to_string()))?,
     }))
 }
 
@@ -508,13 +511,20 @@ struct SubmitOnboarding {
     sv_code: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = ".generated/OnboardingMeta.ts")]
+pub struct OnboardingMeta {
+    pub start_time: i64,
+    pub end_time: i64,
+}
+
 #[axum_macros::debug_handler]
 async fn submit_onboarding(
     State(app_state): State<Arc<AppState>>,
     Json(submit_onboarding_req): Json<SubmitOnboarding>,
 ) -> Result<ServerResponse, ServerError> {
     let rec = sqlx::query!(
-        "SELECT banned, staff_onboard_state, staff_onboard_guild, staff_onboard_current_onboard_resp_id FROM users WHERE user_id = $1 AND api_token = $2",
+        "SELECT banned, staff_onboard_state, staff_onboard_last_start_time, staff_onboard_guild, staff_onboard_current_onboard_resp_id FROM users WHERE user_id = $1 AND api_token = $2",
         submit_onboarding_req.user_id,
         submit_onboarding_req.token
     )
@@ -651,12 +661,16 @@ async fn submit_onboarding(
         .map_err(|_| ServerError::Error("Could not start transaction".to_string()))?;
 
     sqlx::query!(
-        "UPDATE onboard_data SET questions = $1, answers = $2 WHERE onboard_code = $3",
+        "UPDATE onboard_data SET questions = $1, answers = $2, meta = $3 WHERE onboard_code = $4",
         serde_json::to_value(questions).map_err(|_| {
             ServerError::Error("Fatal error: Could not serialize questions".to_string())
         })?,
         serde_json::to_value(submit_onboarding_req.quiz_answers)
             .map_err(|_| ServerError::Error("Could not serialize answers".to_string()))?,
+        serde_json::to_value(OnboardingMeta {
+            start_time: rec.staff_onboard_last_start_time.ok_or(ServerError::Error("Could not find last start time".to_string()))?.timestamp(),
+            end_time: Utc::now().timestamp()
+        }).map_err(|_| ServerError::Error("Could not serialize meta".to_string()))?,
         &id
     )
     .execute(&mut tx)
