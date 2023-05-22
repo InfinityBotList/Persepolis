@@ -36,16 +36,14 @@ pub async fn queue(ctx: Context<'_>) -> Result<(), Error> {
 
     match onboard_state {
         crate::states::OnboardState::Pending => {
-            ctx.send(
-                CreateReply::new()
-                .content(
-                    "
+            ctx.send(CreateReply::new().content(
+                "
 **Welcome to Infinity Bot List**
 
 Since you seem new to this place, how about a nice look arou-?                    
-                    "
-                )
-            ).await?;
+                    ",
+            ))
+            .await?;
 
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 

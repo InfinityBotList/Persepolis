@@ -13,7 +13,7 @@ use poise::serenity_prelude::{AddMember, GuildId, UserId};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use serenity::{all::ChannelId, json::json};
-use sqlx::{PgPool, types::chrono::Utc};
+use sqlx::{types::chrono::Utc, PgPool};
 use tower_http::cors::{Any, CorsLayer};
 use ts_rs::TS;
 
@@ -288,7 +288,7 @@ struct OnboardResponse {
     questions: Vec<Question>,
     answer: HashMap<String, String>,
     data: HashMap<String, String>,
-    meta: OnboardingMeta
+    meta: OnboardingMeta,
 }
 
 async fn get_onboard_response(
@@ -668,9 +668,15 @@ async fn submit_onboarding(
         serde_json::to_value(submit_onboarding_req.quiz_answers)
             .map_err(|_| ServerError::Error("Could not serialize answers".to_string()))?,
         serde_json::to_value(OnboardingMeta {
-            start_time: rec.staff_onboard_last_start_time.ok_or(ServerError::Error("Could not find last start time".to_string()))?.timestamp(),
+            start_time: rec
+                .staff_onboard_last_start_time
+                .ok_or(ServerError::Error(
+                    "Could not find last start time".to_string()
+                ))?
+                .timestamp(),
             end_time: Utc::now().timestamp()
-        }).map_err(|_| ServerError::Error("Could not serialize meta".to_string()))?,
+        })
+        .map_err(|_| ServerError::Error("Could not serialize meta".to_string()))?,
         &id
     )
     .execute(&mut tx)
