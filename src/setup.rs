@@ -2,7 +2,7 @@ use std::num::NonZeroU64;
 
 use crate::{cache::CacheHttpImpl, config, crypto::gen_random, Context, Error};
 use poise::serenity_prelude::{
-    permissions, ChannelId, CreateActionRow, CreateButton, CreateChannel, CreateEmbed, EditMessage,
+    Permissions, ChannelId, CreateActionRow, CreateButton, CreateChannel, CreateEmbed, EditMessage,
     EditRole, GuildId, Mentionable, Message, RoleId,
 };
 use serenity::json::json;
@@ -183,7 +183,7 @@ pub async fn get_onboard_user_role(
                 cache_http,
                 EditRole::new()
                     .name("onboard-user")
-                    .permissions(permissions::Permissions::all()),
+                    .permissions(Permissions::all()),
             )
             .await?;
 
