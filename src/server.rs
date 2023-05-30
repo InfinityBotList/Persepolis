@@ -287,7 +287,7 @@ struct OnboardResponse {
     user_id: String,
     questions: Vec<Question>,
     answer: HashMap<String, String>,
-    data: HashMap<String, String>,
+    verdict: HashMap<String, String>,
     meta: OnboardingMeta,
 }
 
@@ -296,7 +296,7 @@ async fn get_onboard_response(
     Path(rid): Path<String>,
 ) -> Result<Json<OnboardResponse>, ServerError> {
     let resp = sqlx::query!(
-        "SELECT data, questions, answers, meta, user_id FROM onboard_data WHERE onboard_code = $1",
+        "SELECT verdict, questions, answers, meta, user_id FROM onboard_data WHERE onboard_code = $1",
         rid.to_string()
     )
     .fetch_one(&app_state.pool)
@@ -309,7 +309,7 @@ async fn get_onboard_response(
             .map_err(|_| ServerError::Error("Could not parse qustions".to_string()))?,
         answer: serde_json::from_value(resp.answers)
             .map_err(|_| ServerError::Error("Could not parse answers".to_string()))?,
-        data: serde_json::from_value(resp.data)
+        verdict: serde_json::from_value(resp.verdict)
             .map_err(|_| ServerError::Error("Could not parse data".to_string()))?,
         meta: serde_json::from_value(resp.meta)
             .map_err(|_| ServerError::Error("Could not parse meta".to_string()))?,

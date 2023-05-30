@@ -137,8 +137,8 @@ AND staff_onboard_state != $1
 AND (
 -- Case 1: Not complete (!= $2) but has been more than one hour
 (staff_onboard_state != $2 AND staff_onboard_last_start_time < NOW() - INTERVAL '1 hour')
--- Case 2: Complete ($1) but has been more than 1 month
-OR (staff_onboard_state = $2 AND staff_onboard_last_start_time < NOW() - INTERVAL '1 month')
+-- Case 2: Complete ($1) but has been more than 3 months
+OR (staff_onboard_state = $2 AND staff_onboard_last_start_time < NOW() - INTERVAL '3 months')
 )
         ",
         states::OnboardState::PendingManagerReview.to_string(),

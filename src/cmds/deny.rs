@@ -1,6 +1,7 @@
 use poise::serenity_prelude::{CreateEmbed, Member};
 use poise::CreateReply;
 use serenity::all::UserId;
+use sqlx::types::chrono::Utc;
 
 use crate::checks;
 use crate::Context;
@@ -63,12 +64,13 @@ pub async fn deny(ctx: Context<'_>, member: Member, reason: String) -> Result<()
 
             let tok = crate::crypto::gen_random(48);
             sqlx::query!(
-                "INSERT INTO onboard_data (user_id, onboard_code, data) VALUES ($1, $2, $3)",
+                "INSERT INTO onboard_data (user_id, onboard_code, verdict) VALUES ($1, $2, $3)",
                 ctx.author().id.to_string(),
                 tok,
                 serde_json::json!({
                     "action": "deny",
                     "reason": reason,
+                    "end_review_time": Utc::now().timestamp(), // Current time review ended
                 })
             )
             .execute(&mut tx)
