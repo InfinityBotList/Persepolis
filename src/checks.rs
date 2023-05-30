@@ -90,13 +90,13 @@ If you accidentally left the onboarding server, you can rejoin using {}/{}
         _ => {}
     }
 
-    // Check if older than 1 hour
+    // Check if older than 3 hour
     if state.staff_onboard_last_start_time.is_some() {
         let last_start_time = state
             .staff_onboard_last_start_time
             .ok_or("Invalid last start time")?;
 
-        if last_start_time.timestamp() + 3600 < chrono::Utc::now().timestamp() {
+        if last_start_time.timestamp() + 60*60*3 < chrono::Utc::now().timestamp() {
             // They need to redo onboarding again... wipe their old progress and restart
 
             let mut msg = ctx.send(

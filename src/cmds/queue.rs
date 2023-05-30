@@ -59,7 +59,7 @@ Since you seem new to this place, how about a nice look arou-?
 4. Test the bot in question
 5. Approve or deny the bot using ``/approve`` or ``/deny`` (or ``ibo!approve`` or ``ibo!deny``)
 
-**You must complete this challenge within 1 hour. Using testing commands properly will reset the timer.**
+**You must complete this challenge within 3 hours.**
                 ")
                 .embed(
                     CreateEmbed::new()
