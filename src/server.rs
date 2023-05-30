@@ -282,12 +282,20 @@ async fn get_onboard_code(
 }
 
 #[derive(Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = ".generated/Verdict.ts")]
+pub struct Verdict {
+    pub action: String,
+    pub reason: String,
+    pub end_review_time: i64
+}
+
+#[derive(Serialize, Deserialize, Clone, TS)]
 #[ts(export, export_to = ".generated/OnboardResponse.ts")]
 struct OnboardResponse {
     user_id: String,
     questions: Vec<Question>,
     answer: HashMap<String, String>,
-    verdict: HashMap<String, String>,
+    verdict: Verdict,
     meta: OnboardingMeta,
 }
 
