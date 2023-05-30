@@ -77,6 +77,25 @@ Since you seem new to this place, how about a nice look arou-?
                     .footer(CreateEmbedFooter::new("Are you ready to take on *this* challenge, young padawan?"))
                     .color(0xA020F0)
                 )
+                .components(
+                    vec![
+                        CreateActionRow::Buttons(vec![
+                            CreateButton::new_link(
+                                format!(
+                                    "{}/bots/{}/invite",
+                                    crate::config::CONFIG.frontend_url,
+                                    crate::config::CONFIG.test_bot
+                                )
+                            ).label("Invite"),
+                            CreateButton::new_link(format!(
+                                "{}/bots/{}",
+                                crate::config::CONFIG.frontend_url,
+                                crate::config::CONFIG.test_bot
+                                )
+                            ).label("View Page"),
+                        ])    
+                    ]
+                )
             )
             .await?;
 
