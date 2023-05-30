@@ -143,7 +143,7 @@ Welcome to your onboarding server! Please read the following:
 2. Make sure to test **all** commands of the test bot during onboarding. In actual bot review, you *do not need to do this* but in onboarding, you **must**.
 3. If slash commands do not appear, then try leaving and rejoining, if it still does not work, then please DM staff.
 
-**There is a 3 hour time limit for onboarding. If you exceed this time limit, you will have to start over. You can extend this limit by progressing through onboarding.**
+**There is a 3 hour time limit for onboarding and if you exceed this time limit, you will have to start over.**
             ", general_channel.mention())
         ).await?;
 
