@@ -5,3 +5,4 @@ persepolis
 persepolis/**
 **/config.yaml
 **/config.yaml.sample
+.generated

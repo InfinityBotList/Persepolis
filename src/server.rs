@@ -645,9 +645,9 @@ async fn submit_onboarding(
                 }
             }
             QuestionData::Long => {
-                if answer.len() < 1800 {
+                if answer.len() < 750 {
                     return Err(ServerError::Error(
-                        "Long answer questions must be at least 1800 characters long".to_string(),
+                        "Long answer questions must be at least 750 characters long".to_string(),
                     ));
                 }
             }

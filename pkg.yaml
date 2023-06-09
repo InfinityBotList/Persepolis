@@ -1,0 +1,8 @@
+language: rust
+project: "persepolis"
+binary: "persepolis"
+service: "persepolis"
+lang_opts:
+  bindings: "/iblcdn/public/dev/bindings/persepolis"
+env:
+  DATABASE_URL: postgres://localhost/infinity  
