@@ -652,7 +652,7 @@ async fn submit_onboarding(
                 }
             }
             QuestionData::MultipleChoice(ref choices) => {
-                if !choices.contains(&answer) {
+                if !choices.contains(answer) {
                     return Err(ServerError::Error(
                         "Invalid answer for multiple choice question".to_string(),
                     ));
