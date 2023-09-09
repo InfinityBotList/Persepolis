@@ -163,7 +163,6 @@ pub async fn approveonboard(
     }
 
     // Create invite in staff server 
-
     let staff_server_invite = {
         let channel = ctx.discord().cache.guild_channel(crate::config::CONFIG.channels.onboarding_channel).ok_or("Could not find onboarding channel")?.clone();
 
