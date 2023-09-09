@@ -26,12 +26,14 @@ impl Default for Servers {
 #[derive(Serialize, Deserialize)]
 pub struct Roles {
     pub awaiting_staff: NonZeroU64,
+    pub main_server_web_moderator: NonZeroU64,
 }
 
 impl Default for Roles {
     fn default() -> Self {
         Self {
             awaiting_staff: NonZeroU64::new(1029058929361174678).unwrap(),
+            main_server_web_moderator: NonZeroU64::new(762371586434793472).unwrap()
         }
     }
 }
@@ -83,6 +85,7 @@ pub struct Config {
     pub proxy_url: String,
     pub persepolis_domain: String,
     pub questions: Vec<Question>,
+    pub testing_server: String,
 }
 
 impl Default for Config {
@@ -99,6 +102,7 @@ impl Default for Config {
             proxy_url: String::from("http://127.0.0.1:3219"),
             persepolis_domain: String::from("https://persepolis.infinitybots.gg"),
             questions: vec![],
+            testing_server: "https://discord.com/channels/758641373074423808/815376699868446801/1119292578307776622".to_string()
         }
     }
 }

@@ -3,6 +3,7 @@ use poise::{
     serenity_prelude::{ButtonStyle, CreateActionRow, CreateButton, CreateMessage, GuildId, User},
     CreateReply,
 };
+use serenity::builder::CreateInvite;
 use std::num::NonZeroU64;
 
 /// Guild base command
@@ -111,6 +112,8 @@ pub async fn approveonboard(
     ctx: Context<'_>,
     #[description = "The staff id"] member: User,
 ) -> Result<(), Error> {
+    ctx.defer().await?;
+
     let data = ctx.data();
 
     // Check onboard state of user
@@ -141,11 +144,45 @@ pub async fn approveonboard(
     .execute(&data.pool)
     .await?;
 
+    // Remove awaiting staff role
+    let mut main_member = ctx.discord().cache.member(crate::config::CONFIG.servers.main, member.id).ok_or("Could not find member in main server")?;
+
+    if main_member.roles.contains(&crate::config::CONFIG.roles.awaiting_staff.into()) {
+        main_member.remove_role(
+            &ctx.discord().http,
+            crate::config::CONFIG.roles.awaiting_staff,
+        ).await?;
+    }
+
+    if !main_member.roles.contains(&crate::config::CONFIG.roles.main_server_web_moderator.into()) {
+        main_member.add_role(
+            &ctx.discord().http,
+            crate::config::CONFIG.roles.main_server_web_moderator
+        )
+        .await?;
+    }
+
+    // Create invite in staff server 
+
+    let staff_server_invite = {
+        let channel = ctx.discord().cache.guild_channel(crate::config::CONFIG.channels.onboarding_channel).ok_or("Could not find onboarding channel")?.clone();
+
+        channel.create_invite(&ctx.discord(), CreateInvite::new().max_uses(1).max_age(0).audit_log_reason("Invite new staff member")).await?
+    };
+
     // DM user that they have been approved
     let _ = member.dm(
-        &ctx.discord().http,
+        &ctx.discord(),
         CreateMessage::new()
-        .content("Your onboarding request has been approved. You may now begin approving/denying bots") 
+        .content(
+            format!("Your onboarding request has been approved. You may now begin approving/denying bots
+            
+**Note: If you are not yet in the staff server (first timer?), then please first join the `Staff Center` and `Verification Center` servers using the following invite link(s): {} and {}**
+            ",
+            staff_server_invite.url(),
+            crate::config::CONFIG.testing_server
+            )
+        ) 
     ).await?;
 
     ctx.say("Onboarding request approved!").await?;
