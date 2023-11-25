@@ -128,7 +128,7 @@ pub async fn approveonboard(
     .await?;
 
     let force = force.unwrap_or(false);
-    if force {
+    if !force {
         log::info!("Force approving user: {}", member.id);
         if onboard_state.staff_onboard_state
             != crate::states::OnboardState::PendingManagerReview.to_string()
