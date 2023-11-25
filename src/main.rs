@@ -208,7 +208,7 @@ async fn main() {
                 cmds::deny::deny(),
                 cmds::staffguide::staffguide(),
             ],
-            /// This code is run before every command
+            // This code is run before every command
             pre_command: |ctx| {
                 Box::pin(async move {
                     info!(
@@ -219,7 +219,7 @@ async fn main() {
                     );
                 })
             },
-            /// This code is run after every command returns Ok
+            // This code is run after every command returns Ok
             post_command: |ctx| {
                 Box::pin(async move {
                     info!(

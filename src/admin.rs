@@ -111,28 +111,35 @@ pub async fn admin(_ctx: Context<'_>) -> Result<(), Error> {
 pub async fn approveonboard(
     ctx: Context<'_>,
     #[description = "The staff id"] member: User,
+    #[description = "Whether or not to force approve. Not recommended unless required"] force: Option<bool>,
 ) -> Result<(), Error> {
     ctx.defer().await?;
 
     let data = ctx.data();
 
+    let mut tx = data.pool.begin().await?;
+    
     // Check onboard state of user
     let onboard_state = sqlx::query!(
-        "SELECT staff_onboard_state FROM users WHERE user_id = $1",
+        "SELECT staff_onboard_state FROM users WHERE user_id = $1 FOR UPDATE",
         member.id.to_string()
     )
-    .fetch_one(&data.pool)
+    .fetch_one(&mut *tx)
     .await?;
 
-    if onboard_state.staff_onboard_state
-        != crate::states::OnboardState::PendingManagerReview.to_string()
-        && onboard_state.staff_onboard_state != crate::states::OnboardState::Denied.to_string()
-    {
-        return Err(format!(
-            "User is not pending manager review and currently has state of: {}",
-            onboard_state.staff_onboard_state
-        )
-        .into());
+    let force = force.unwrap_or(false);
+    if force {
+        log::info!("Force approving user: {}", member.id);
+        if onboard_state.staff_onboard_state
+            != crate::states::OnboardState::PendingManagerReview.to_string()
+            && onboard_state.staff_onboard_state != crate::states::OnboardState::Denied.to_string()
+        {
+            return Err(format!(
+                "User is not pending manager review and currently has state of: {}",
+                onboard_state.staff_onboard_state
+            )
+            .into());
+        }
     }
 
     // Update onboard state of user
@@ -141,7 +148,7 @@ pub async fn approveonboard(
         crate::states::OnboardState::Completed.to_string(),
         member.id.to_string()
     )
-    .execute(&data.pool)
+    .execute(&mut *tx)
     .await?;
 
     // Remove awaiting staff role
@@ -191,7 +198,7 @@ pub async fn approveonboard(
         "SELECT staff_onboard_guild FROM users WHERE user_id = $1",
         member.id.to_string()
     )
-    .fetch_one(&data.pool)
+    .fetch_one(&mut *tx)
     .await?;
 
     if let Some(guild) = staff_onboard_guild.staff_onboard_guild {
@@ -199,6 +206,8 @@ pub async fn approveonboard(
             crate::setup::delete_or_leave_guild(&data.cache_http, GuildId(guild)).await?;
         }
     }
+
+    tx.commit().await?;
 
     Ok(())
 }
