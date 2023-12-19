@@ -6,3 +6,7 @@ persepolis/**
 **/config.yaml
 **/config.yaml.sample
 .generated
+modules.xml
+persepolis.iml
+vcs.xml
+.idea
