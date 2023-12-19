@@ -151,16 +151,16 @@ async fn confirm_login(
     if user.id != data.state {
         // Check if admin
         let staff = sqlx::query!(
-            "SELECT admin FROM users WHERE user_id = $1",
+            "SELECT perms FROM staff_members WHERE user_id = $1",
             user.id.to_string()
         )
         .fetch_one(&app_state.pool)
         .await
         .map_err(|_| ServerError::Error("Could not get user from database".to_string()))?;
 
-        if !staff.admin {
+        if !kittycat::perms::has_perm(&staff.perms, &kittycat::perms::build("persepolis", "join_onboarding_servers")) {
             return Err(ServerError::Error(
-                "Only 'Staff Managers' and the user themselves can join onboarding servers"
+                "Only staff members with the `persepolis.join_onboarding_servers` permission and the user themselves can join onboarding servers"
                     .to_string(),
             ));
         }

@@ -195,7 +195,7 @@ async fn main() {
             commands: vec![
                 register(),
                 checks::test_onboardable(),
-                checks::test_can_onboard(),
+                checks::test_setup_onboarding(),
                 help::help(),
                 help::simplehelp(),
                 admin::guild(),

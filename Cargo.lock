@@ -1022,6 +1022,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "kittycat"
+version = "0.1.0"
+source = "git+https://github.com/infinitybotlist/kittycat?branch=main#2554281bf94c3266fdad9c163535bda0853e8dad"
+
+[[package]]
 name = "levenshtein"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1287,6 +1292,7 @@ dependencies = [
  "env_logger",
  "futures-util",
  "indexmap 1.9.3",
+ "kittycat",
  "log",
  "once_cell",
  "poise",

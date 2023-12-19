@@ -13,8 +13,8 @@ use crate::Error;
 #[poise::command(
     prefix_command,
     slash_command,
-    check = "checks::onboardable",
-    check = "checks::can_onboard"
+    check = "checks::is_onboardable",
+    check = "checks::setup_onboarding"
 )]
 pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
     let data = ctx.data();

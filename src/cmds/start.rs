@@ -5,8 +5,8 @@ use crate::Error;
 #[poise::command(
     prefix_command,
     slash_command,
-    check = "checks::onboardable",
-    check = "checks::can_onboard"
+    check = "checks::is_onboardable",
+    check = "checks::setup_onboarding"
 )]
 pub async fn start(ctx: Context<'_>) -> Result<(), Error> {
     ctx.say("Whoa! You've already started lol").await?;

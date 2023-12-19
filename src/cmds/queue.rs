@@ -10,8 +10,8 @@ use poise::CreateReply;
 #[poise::command(
     prefix_command,
     slash_command,
-    check = "checks::onboardable",
-    check = "checks::can_onboard"
+    check = "checks::is_onboardable",
+    check = "checks::setup_onboarding"
 )]
 pub async fn queue(ctx: Context<'_>) -> Result<(), Error> {
     let data = ctx.data();

@@ -13,29 +13,30 @@ use crate::{
 };
 
 pub async fn is_admin(ctx: Context<'_>) -> Result<bool, Error> {
+    let cmd_name = ctx.invoked_command_name();
     let row = sqlx::query!(
-        "SELECT admin FROM users WHERE user_id = $1",
+        "SELECT perms FROM staff_members WHERE user_id = $1",
         ctx.author().id.to_string()
     )
     .fetch_one(&ctx.data().pool)
     .await?;
 
-    if row.admin {
+    if kittycat::perms::has_perm(&row.perms, &kittycat::perms::build("persepolis", cmd_name)) {
         Ok(true)
     } else {
         Err("You are not an admin".into())
     }
 }
 
-pub async fn onboardable(ctx: Context<'_>) -> Result<bool, Error> {
+pub async fn is_onboardable(ctx: Context<'_>) -> Result<bool, Error> {
     let row = sqlx::query!(
-        "SELECT staff FROM users WHERE user_id = $1",
+        "SELECT positions FROM staff_members WHERE user_id = $1",
         ctx.author().id.to_string()
     )
     .fetch_one(&ctx.data().pool)
     .await?;
 
-    if row.staff {
+    if !row.positions.is_empty() {
         return Ok(true);
     }
 
@@ -61,7 +62,7 @@ pub async fn onboardable(ctx: Context<'_>) -> Result<bool, Error> {
     }
 }
 
-pub async fn can_onboard(ctx: Context<'_>) -> Result<bool, Error> {
+pub async fn setup_onboarding(ctx: Context<'_>) -> Result<bool, Error> {
     let state = sqlx::query!(
         "SELECT staff_onboard_state, staff_onboard_last_start_time, staff_onboard_guild FROM users WHERE user_id = $1",
         ctx.author().id.to_string()
@@ -238,14 +239,14 @@ If you accidentally left the onboarding server, you can rejoin using {}/{}
     }
 }
 
-#[poise::command(prefix_command, check = "onboardable")]
+#[poise::command(prefix_command, check = "is_onboardable")]
 pub async fn test_onboardable(ctx: Context<'_>) -> Result<(), Error> {
     ctx.say("You are *onboardable*!").await?;
     Ok(())
 }
 
-#[poise::command(prefix_command, check = "can_onboard")]
-pub async fn test_can_onboard(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.say("Pre-run onboarding checks passed!").await?;
+#[poise::command(prefix_command, check = "setup_onboarding")]
+pub async fn test_setup_onboarding(ctx: Context<'_>) -> Result<(), Error> {
+    ctx.say("Pre-run onboarding checks and setup passed!").await?;
     Ok(())
 }
