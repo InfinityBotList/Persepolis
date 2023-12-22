@@ -1,38 +1,39 @@
-use std::num::NonZeroU64;
-
 use crate::{cache::CacheHttpImpl, config, crypto::gen_random, Context, Error};
 use poise::serenity_prelude::{
     ChannelId, CreateActionRow, CreateButton, CreateChannel, CreateEmbed, EditMessage, EditRole,
     GuildId, Mentionable, Message, Permissions, RoleId,
 };
 use serenity::json::json;
+use sqlx::types::uuid;
+
+/// Returns the onboarding id given a context
+pub async fn get_onboarding_id(ctx: &Context<'_>) -> Result<Option<uuid::Uuid>, Error> {
+    if let Some(guild_id) = ctx.guild_id() {
+        let row = sqlx::query!(
+            "SELECT id FROM staff_onboardings WHERE guild_id = $1",
+            guild_id.to_string()
+        )
+        .fetch_optional(&ctx.data().pool)
+        .await?;
+
+        if let Some(row) = row {
+            return Ok(Some(row.id));
+        }
+    }    
+
+    Ok(None)
+}
 
 /// Sets up a guild
 pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Error> {
-    // Check if user has onboard_guild set first
-    let row = sqlx::query!(
-        "SELECT staff_onboard_guild FROM users WHERE user_id = $1",
-        ctx.author().id.to_string()
-    )
-    .fetch_optional(&ctx.data().pool)
-    .await?;
-
-    if let Some(row) = row {
-        if let Some(g) = row.staff_onboard_guild {
-            if let Ok(g) = g.parse::<NonZeroU64>() {
-                delete_or_leave_guild(&ctx.data().cache_http, GuildId(g)).await?
-            }
-        }
-    }
-
-    if ctx.discord().cache.guilds().len() >= 10 {
+    if ctx.serenity_context().cache.guilds().len() >= 10 {
         return Err(
             "Creating new guilds can only be done when the bot is in less than 10 guilds".into(),
         );
     }
 
     let guild = ctx
-        .discord()
+        .serenity_context()
         .http
         .create_guild(&json!({
             "name": "IBLO-".to_string() + &gen_random(6)
@@ -42,7 +43,7 @@ pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Erro
     guild
         .id
         .edit_mfa_level(
-            &ctx.discord().http,
+            &ctx.serenity_context().http,
             poise::serenity_prelude::MfaLevel::Elevated,
             Some("Onboarding prerequisite"),
         )
@@ -51,16 +52,16 @@ pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Erro
 
     // Update DB
     sqlx::query!(
-        "UPDATE users SET staff_onboard_guild = $1 WHERE user_id = $2",
-        guild.id.0.to_string(),
-        ctx.author().id.to_string()
+        "INSERT INTO staff_onboardings (user_id, guild_id) VALUES ($1, $2)",
+        ctx.author().id.to_string(),
+        guild.id.to_string()
     )
     .execute(&ctx.data().pool)
     .await?;
 
     // Edit message embed
     msg.edit(
-        &ctx.discord(),
+        &ctx.serenity_context(),
         EditMessage::new()
         .embed(
             CreateEmbed::new()

@@ -5,6 +5,7 @@ use poise::serenity_prelude::{
     CreateWebhook, ExecuteWebhook, Member, Mentionable,
 };
 use poise::CreateReply;
+use serenity::builder::EditMessage;
 
 use crate::checks;
 use crate::Context;
@@ -19,20 +20,25 @@ use crate::Error;
 pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
     let data = ctx.data();
 
+    let Some(onboarding_id) = crate::setup::get_onboarding_id(&ctx).await? else {
+        return Err("Onboarding ID not found for this server?".into());
+    };
+
     let onboard_state = sqlx::query!(
-        "SELECT staff_onboard_state FROM users WHERE user_id = $1",
-        ctx.author().id.to_string()
+        "SELECT state FROM staff_onboardings WHERE user_id = $1 AND id = $2",
+        ctx.author().id.to_string(),
+        onboarding_id
     )
     .fetch_one(&data.pool)
     .await?
-    .staff_onboard_state
+    .state
     .parse::<crate::states::OnboardState>()?;
 
     match onboard_state {
         crate::states::OnboardState::Started => {
-            if member.user.id.0 != crate::config::CONFIG.test_bot {
+            if member.user.id != crate::config::CONFIG.test_bot {
                 ctx.send(
-                    CreateReply::new()
+                    CreateReply::default()
                     .embed(
                         CreateEmbed::default()
                         .title("Invalid Bot")
@@ -44,7 +50,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                 return Ok(());
             }
 
-            let builder = CreateReply::new()
+            let builder = CreateReply::default()
             .embed(
                 CreateEmbed::default()
                 .title("Bot Already Claimed")
@@ -80,11 +86,11 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
             ctx.say("When reviewing, it is STRONGLY recommended (and a good practice) to **remind the reviewer first before force claiming a bot they have claimed**. So, lets do that :smirk:").await?;
 
             let interaction = msg
-            .await_component_interaction(ctx.discord())
+            .await_component_interaction(ctx.serenity_context())
             .author_id(ctx.author().id)
             .await;
 
-            msg.edit(ctx.discord(), builder.to_prefix_edit().components(vec![])).await?; // remove buttons after button press
+            msg.edit(ctx.serenity_context(), builder.to_prefix_edit(EditMessage::new()).components(vec![])).await?; // remove buttons after button press
 
             if let Some(m) = &interaction {
                 let id = &m.data.custom_id;
@@ -105,11 +111,11 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                 let wh = ctx
                     .channel_id()
                     .create_webhook(
-                        &ctx.discord(),
+                        &ctx.serenity_context(),
                         CreateWebhook::new("Splashtail").avatar(
                             &CreateAttachment::url(
-                                &ctx.discord(),
-                                "https://cdn.infinitybots.gg/images/png/onboarding-v4.png",
+                                &ctx.serenity_context(),
+                                "https://cdn.infinitybots.gg/staff/staff/onboarding-v4.webp",
                             )
                             .await?,
                         ),
@@ -126,7 +132,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                 };
 
                 wh.execute(
-                    &ctx.discord(),
+                    &ctx.serenity_context(),
                     true,
                     ExecuteWebhook::default()
                     .content(
@@ -140,9 +146,10 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                 ctx.say("Great! With a real bot, things won't go this smoothly, but you can always remind people to test their bot! Now try claiming again, but this time use ``Force Claim``").await?; 
 
                 sqlx::query!(
-                    "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
+                    "UPDATE staff_onboardings SET state = $1 WHERE user_id = $2 AND id = $3",
                     crate::states::OnboardState::QueueRemindedReviewer.to_string(),
-                    ctx.author().id.to_string()
+                    ctx.author().id.to_string(),
+                    onboarding_id
                 )
                 .execute(&data.pool)
                 .await?;
@@ -151,9 +158,9 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
             Ok(())
         },
         crate::states::OnboardState::QueueRemindedReviewer => {
-            if member.user.id.0 != crate::config::CONFIG.test_bot {
+            if member.user.id != crate::config::CONFIG.test_bot {
                 ctx.send(
-                    CreateReply::new()
+                    CreateReply::default()
                     .embed(
                         CreateEmbed::default()
                         .title("Invalid Bot")
@@ -165,7 +172,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                 return Ok(());
             }
 
-            let builder = CreateReply::new()
+            let builder = CreateReply::default()
             .embed(
                 CreateEmbed::default()
                 .title("Bot Already Claimed")
@@ -199,11 +206,11 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
             .await?;
 
             let interaction = msg
-            .await_component_interaction(ctx.discord())
+            .await_component_interaction(ctx.serenity_context())
             .author_id(ctx.author().id)
             .await;
 
-            msg.edit(ctx.discord(), builder.to_prefix_edit().components(vec![])).await?; // remove buttons after button press
+            msg.edit(ctx.serenity_context(), builder.to_prefix_edit(EditMessage::new()).components(vec![])).await?; // remove buttons after button press
 
             if let Some(m) = &interaction {
                 let id = &m.data.custom_id;
@@ -213,9 +220,10 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                 }
 
                 sqlx::query!(
-                    "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
+                    "UPDATE staff_onboardings SET state = $1 WHERE user_id = $2 AND id = $3",
                     crate::states::OnboardState::Claimed.to_string(),
-                    ctx.author().id.to_string()
+                    ctx.author().id.to_string(),
+                    onboarding_id
                 )
                 .execute(&data.pool)
                 .await?;

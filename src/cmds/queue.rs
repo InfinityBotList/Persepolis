@@ -16,13 +16,18 @@ use poise::CreateReply;
 pub async fn queue(ctx: Context<'_>) -> Result<(), Error> {
     let data = ctx.data();
 
+    let Some(onboarding_id) = crate::setup::get_onboarding_id(&ctx).await? else {
+        return Err("Onboarding ID not found for this server?".into());
+    };
+
     let onboard_state = sqlx::query!(
-        "SELECT staff_onboard_state FROM users WHERE user_id = $1",
-        ctx.author().id.to_string()
+        "SELECT state FROM staff_onboardings WHERE user_id = $1 AND id = $2",
+        ctx.author().id.to_string(),
+        onboarding_id
     )
     .fetch_one(&data.pool)
     .await?
-    .staff_onboard_state
+    .state
     .parse::<crate::states::OnboardState>()?;
 
     let bot_name = {
@@ -36,7 +41,7 @@ pub async fn queue(ctx: Context<'_>) -> Result<(), Error> {
 
     match onboard_state {
         crate::states::OnboardState::Pending => {
-            ctx.send(CreateReply::new().content(
+            ctx.send(CreateReply::default().content(
                 "
 **Welcome to Infinity Bot List**
 
@@ -48,7 +53,7 @@ Since you seem new to this place, how about a nice look arou-?
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
             ctx.send(
-                CreateReply::new()
+                CreateReply::default()
                 .content("Whoa there! Look at that! There's a new bot to review!!! 
 
 **Here are the general steps to follow:**
@@ -100,9 +105,10 @@ Since you seem new to this place, how about a nice look arou-?
             .await?;
 
             sqlx::query!(
-                "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
+                "UPDATE staff_onboardings SET state = $1 WHERE user_id = $2 AND id = $3",
                 crate::states::OnboardState::Started.to_string(),
-                ctx.author().id.to_string()
+                ctx.author().id.to_string(),
+                onboarding_id
             )
             .execute(&data.pool)
             .await?;
@@ -149,7 +155,7 @@ Since you seem new to this place, how about a nice look arou-?
                 ));
 
             ctx.send(
-                CreateReply::new()
+                CreateReply::default()
                     .embed(embed)
                     .components(vec![CreateActionRow::Buttons(vec![
                         CreateButton::new_link(bot_data.invite).label("Invite"),
@@ -200,7 +206,7 @@ Since you seem new to this place, how about a nice look arou-?
                 ));
 
             ctx.send(
-                CreateReply::new()
+                CreateReply::default()
                     .embed(embed)
                     .components(vec![CreateActionRow::Buttons(vec![
                         CreateButton::new_link(bot_data.invite).label("Invite"),

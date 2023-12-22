@@ -1,8 +1,8 @@
 use crate::Error;
 use once_cell::sync::Lazy;
-use poise::serenity_prelude::GuildId;
+use poise::serenity_prelude::{UserId, GuildId, RoleId, ChannelId};
 use serde::{Deserialize, Serialize};
-use std::{fs::File, io::Write, num::NonZeroU64};
+use std::{fs::File, io::Write};
 use ts_rs::TS;
 
 /// Global config object
@@ -17,23 +17,23 @@ pub struct Servers {
 impl Default for Servers {
     fn default() -> Self {
         Self {
-            main: GuildId(NonZeroU64::new(758641373074423808).unwrap()),
-            staff: GuildId(NonZeroU64::new(870950609291972618).unwrap()),
+            main: GuildId::new(758641373074423808),
+            staff: GuildId::new(870950609291972618),
         }
     }
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Roles {
-    pub awaiting_staff: NonZeroU64,
-    pub main_server_web_moderator: NonZeroU64,
+    pub awaiting_staff: RoleId,
+    pub main_server_web_moderator: RoleId,
 }
 
 impl Default for Roles {
     fn default() -> Self {
         Self {
-            awaiting_staff: NonZeroU64::new(1029058929361174678).unwrap(),
-            main_server_web_moderator: NonZeroU64::new(762371586434793472).unwrap()
+            awaiting_staff: RoleId::new(1029058929361174678),
+            main_server_web_moderator: RoleId::new(762371586434793472)
         }
     }
 }
@@ -61,13 +61,13 @@ pub struct Question {
 #[derive(Serialize, Deserialize)]
 pub struct Channels {
     /// Where onboardings are sent to for staff managers to moderate
-    pub onboarding_channel: NonZeroU64,
+    pub onboarding_channel: ChannelId,
 }
 
 impl Default for Channels {
     fn default() -> Self {
         Self {
-            onboarding_channel: NonZeroU64::new(1087052316533858425).unwrap(),
+            onboarding_channel: ChannelId::new(1087052316533858425),
         }
     }
 }
@@ -80,8 +80,9 @@ pub struct Config {
     pub servers: Servers,
     pub roles: Roles,
     pub channels: Channels,
-    pub test_bot: NonZeroU64,
+    pub test_bot: UserId,
     pub frontend_url: String,
+    pub panel_url: String,
     pub proxy_url: String,
     pub persepolis_domain: String,
     pub questions: Vec<Question>,
@@ -97,8 +98,9 @@ impl Default for Config {
             servers: Servers::default(),
             roles: Roles::default(),
             channels: Channels::default(),
-            test_bot: NonZeroU64::new(990885577979224104).unwrap(),
+            test_bot: UserId::new(990885577979224104),
             frontend_url: String::from("https://infinitybots.gg"),
+            panel_url: String::from("https://panel.infinitybots.gg"),
             proxy_url: String::from("http://127.0.0.1:3219"),
             persepolis_domain: String::from("https://persepolis.infinitybots.gg"),
             questions: vec![],

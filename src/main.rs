@@ -1,8 +1,6 @@
-use std::{num::NonZeroU64, time::Duration};
-
 use log::{error, info};
-use poise::serenity_prelude::{FullEvent, GuildId};
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use poise::serenity_prelude::FullEvent;
+use sqlx::postgres::PgPoolOptions;
 
 use crate::cache::CacheHttpImpl;
 
@@ -18,6 +16,7 @@ mod server;
 mod setup;
 mod states;
 mod stats;
+mod perms;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -26,6 +25,7 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 pub struct Data {
     pool: sqlx::PgPool,
     cache_http: cache::CacheHttpImpl,
+    redis: deadpool_redis::Pool,
 }
 
 #[poise::command(prefix_command)]
@@ -40,7 +40,7 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     // and forward the rest to the default handler
     match error {
         poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
-        poise::FrameworkError::Command { error, ctx } => {
+        poise::FrameworkError::Command { error, ctx, ..  } => {
             error!("Error in command `{}`: {:?}", ctx.command().name, error,);
             let err = ctx
                 .say(format!(
@@ -53,7 +53,7 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
                 error!("SQLX Error: {}", e);
             }
         }
-        poise::FrameworkError::CommandCheckFailed { error, ctx } => {
+        poise::FrameworkError::CommandCheckFailed { error, ctx, .. } => {
             error!(
                 "[Possible] error in command `{}`: {:?}",
                 ctx.command().name,
@@ -80,16 +80,14 @@ async fn event_listener(event: &FullEvent, user_data: &Data) -> Result<(), Error
     match event {
         FullEvent::InteractionCreate {
             interaction,
-            ctx: _,
         } => {
             info!("Interaction received: {:?}", interaction.id());
         }
         FullEvent::Ready {
             data_about_bot,
-            ctx: _,
         } => {
             info!(
-                "{} is ready! Doing some minor DB fixes",
+                "{} is ready!",
                 data_about_bot.user.name
             );
 
@@ -102,65 +100,11 @@ async fn event_listener(event: &FullEvent, user_data: &Data) -> Result<(), Error
 
             tokio::task::spawn(server::setup_server(
                 user_data.pool.clone(),
-                user_data.cache_http.clone(),
-            ));
-
-            tokio::task::spawn(clean_out(
-                user_data.pool.clone(),
+                user_data.redis.clone(),
                 user_data.cache_http.clone(),
             ));
         }
         _ => {}
-    }
-
-    Ok(())
-}
-
-async fn clean_out(pool: PgPool, cache_http: CacheHttpImpl) -> ! {
-    let mut interval = tokio::time::interval(Duration::from_secs(30));
-    loop {
-        interval.tick().await;
-
-        if let Err(e) = clean_out_impl(&pool, &cache_http).await {
-            error!("Error while cleaning out: {}", e);
-        }
-    }
-}
-
-async fn clean_out_impl(pool: &PgPool, cache_http: &CacheHttpImpl) -> Result<(), Error> {
-    let rows = sqlx::query!(
-        "
-SELECT user_id, staff_onboard_guild FROM users
-WHERE staff_onboard_guild IS NOT NULL 
--- The guild in question should never be pending manager review
-AND staff_onboard_state != $1
-AND (
--- Case 1: Not complete (!= $2) but has been more than three hours
-(staff_onboard_state != $2 AND staff_onboard_last_start_time < NOW() - INTERVAL '3 hours')
--- Case 2: Complete ($1) but has been more than 3 months
-OR (staff_onboard_state = $2 AND staff_onboard_last_start_time < NOW() - INTERVAL '3 months')
-)
-        ",
-        states::OnboardState::PendingManagerReview.to_string(),
-        states::OnboardState::Completed.to_string()
-    )
-    .fetch_all(pool)
-    .await?;
-
-    for row in rows {
-        sqlx::query!(
-            "UPDATE users SET staff_onboard_session_code = NULL, staff_onboard_state = $1 WHERE user_id = $2",
-            states::OnboardState::Pending.to_string(),
-            row.user_id
-        )
-        .execute(pool)
-        .await?;
-
-        if let Some(guild_id) = row.staff_onboard_guild {
-            let guild = GuildId(guild_id.parse::<NonZeroU64>()?);
-
-            setup::delete_or_leave_guild(cache_http, guild).await?;
-        }
     }
 
     Ok(())
@@ -191,7 +135,7 @@ async fn main() {
                 prefix: Some("ibo!".into()),
                 ..poise::PrefixFrameworkOptions::default()
             },
-            listener: |event, _ctx, user_data| Box::pin(event_listener(event, user_data)),
+            event_handler: |_ctx, event, _fc, user_data| Box::pin(event_listener(event, user_data)),
             commands: vec![
                 register(),
                 checks::test_onboardable(),
@@ -245,6 +189,8 @@ async fn main() {
                         .connect(&config::CONFIG.database_url)
                         .await
                         .expect("Could not initialize connection"),
+                    redis: deadpool_redis::Config::from_url("redis://localhost")
+                    .create_pool(Some(deadpool_redis::Runtime::Tokio1)).unwrap(),
                 })
             })
         },

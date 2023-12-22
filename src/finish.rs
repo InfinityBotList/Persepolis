@@ -1,10 +1,11 @@
 use poise::serenity_prelude::UserId;
-use sqlx::PgPool;
+use sqlx::{PgPool, types::uuid};
 
 use crate::Error;
 
 pub async fn check_code(
     pool: &PgPool,
+    onboarding_id: &str,
     user_id: UserId,
     inputted_code: &str,
 ) -> Result<bool, Error> {
@@ -16,13 +17,13 @@ pub async fn check_code(
     }
 
     let code = sqlx::query!(
-        "SELECT staff_onboard_session_code FROM users WHERE user_id = $1",
-        user_id.to_string()
+        "SELECT staff_verify_code FROM staff_onboardings WHERE id = $1",
+        onboarding_id.parse::<uuid::Uuid>()?
     )
     .fetch_one(pool)
     .await?;
 
-    if let Some(code) = code.staff_onboard_session_code {
+    if let Some(code) = code.staff_verify_code {
         // Take last 73 characters
         let mut code = code.chars().skip(code.len() - 73).collect::<String>();
 
@@ -30,7 +31,6 @@ pub async fn check_code(
         code.replace_range(
             19..20,
             &user_id
-                .0
                 .to_string()
                 .chars()
                 .next()
@@ -40,7 +40,6 @@ pub async fn check_code(
         code.replace_range(
             21..22,
             &user_id
-                .0
                 .to_string()
                 .chars()
                 .nth(1)
@@ -50,7 +49,6 @@ pub async fn check_code(
         code.replace_range(
             40..41,
             &user_id
-                .0
                 .to_string()
                 .chars()
                 .nth(6)

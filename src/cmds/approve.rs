@@ -1,7 +1,6 @@
 use poise::serenity_prelude::{CreateEmbed, Member};
 use poise::CreateReply;
-use serenity::all::UserId;
-use sqlx::types::chrono::{Utc};
+use sqlx::types::chrono::Utc;
 
 use crate::checks;
 use crate::Context;
@@ -16,13 +15,18 @@ use crate::Error;
 pub async fn approve(ctx: Context<'_>, member: Member, reason: String) -> Result<(), Error> {
     let data = ctx.data();
 
+    let Some(onboarding_id) = crate::setup::get_onboarding_id(&ctx).await? else {
+        return Err("Onboarding ID not found for this server?".into());
+    };
+
     let onboard_state = sqlx::query!(
-        "SELECT staff_onboard_state FROM users WHERE user_id = $1",
-        ctx.author().id.to_string()
+        "SELECT state FROM staff_onboardings WHERE user_id = $1 AND id = $2",
+        ctx.author().id.to_string(),
+        onboarding_id
     )
     .fetch_one(&data.pool)
     .await?
-    .staff_onboard_state
+    .state
     .parse::<crate::states::OnboardState>()?;
 
     match onboard_state {
@@ -30,9 +34,9 @@ pub async fn approve(ctx: Context<'_>, member: Member, reason: String) -> Result
             Err(format!("Please run ``{}queue`` to get started!", ctx.prefix()).into())
         }
         crate::states::OnboardState::Claimed => {
-            if member.user.id.0 != crate::config::CONFIG.test_bot {
+            if member.user.id != crate::config::CONFIG.test_bot {
                 ctx.send(
-                    CreateReply::new().embed(
+                    CreateReply::default().embed(
                         CreateEmbed::default()
                             .title("Invalid Bot")
                             .description("You can only approve the test bot!")
@@ -46,7 +50,7 @@ pub async fn approve(ctx: Context<'_>, member: Member, reason: String) -> Result
 
             if reason.len() < 30 {
                 ctx.send(
-                    CreateReply::new().embed(
+                    CreateReply::default().embed(
                         CreateEmbed::default()
                             .title("Invalid Reason")
                             .description(
@@ -62,7 +66,7 @@ pub async fn approve(ctx: Context<'_>, member: Member, reason: String) -> Result
 
             /*
             if !crate::finish::check_code(&data.pool, ctx.author().id, code).await? {
-                qm.interaction.create_response(&ctx.discord(), CreateInteractionResponse::Message(
+                qm.interaction.create_response(&ctx.serenity_context(), CreateInteractionResponse::Message(
                     CreateInteractionResponseMessage::default()
                     .content("Whoa there! You inputted the wrong verification code (hint: ``/staffguide`` or ``ibb!staffguide``)")
                 )).await?;
@@ -70,39 +74,26 @@ pub async fn approve(ctx: Context<'_>, member: Member, reason: String) -> Result
                 return Ok(());
             } */
 
-            let mut tx = data.pool.begin().await?;
-
-            let tok = crate::crypto::gen_random(48);
             sqlx::query!(
-                "INSERT INTO onboard_data (user_id, onboard_code, verdict) VALUES ($1, $2, $3)",
-                ctx.author().id.to_string(),
-                tok,
+                "UPDATE staff_onboardings SET state = $1, verdict = $2 WHERE user_id = $3 AND id = $4",
+                crate::states::OnboardState::InQuiz.to_string(),
                 serde_json::json!({
                     "action": "approve",
                     "reason": reason,
                     "end_review_time": Utc::now().timestamp(), // Current time review ended
-                })
-            )
-            .execute(&mut tx)
-            .await?;
-
-            sqlx::query!(
-                "UPDATE users SET staff_onboard_state = $1, staff_onboard_current_onboard_resp_id = $2 WHERE user_id = $3",
-                crate::states::OnboardState::InQuiz.to_string(),
-                tok,
+                }),
                 ctx.author().id.to_string(),
+                onboarding_id
             )
-            .execute(&mut tx)
+            .execute(&data.pool)
             .await?;
-
-            tx.commit().await?;
 
             // Try kicking the test bot from the server now
             ctx.guild_id()
                 .ok_or("Failed to get guild")?
                 .kick_with_reason(
-                    &ctx.discord(),
-                    UserId(crate::config::CONFIG.test_bot),
+                    &ctx.serenity_context(),
+                    crate::config::CONFIG.test_bot,
                     "Activated Paradise Protection Protocol",
                 )
                 .await?;
@@ -115,9 +106,9 @@ pub async fn approve(ctx: Context<'_>, member: Member, reason: String) -> Result
                 "
 *Paradise Protection Protocol activated, deploying defenses!!!*
 
-Oh well, good luck with the quiz: {}/admin/onboard/quiz
+Oh well, good luck with the quiz: {}/onboarding/quiz
                 ",
-                crate::config::CONFIG.frontend_url
+                crate::config::CONFIG.panel_url
             ))
             .await?;
 

@@ -3,8 +3,7 @@ use poise::{
     serenity_prelude::{ButtonStyle, CreateActionRow, CreateButton, CreateMessage, GuildId, User},
     CreateReply,
 };
-use serenity::builder::CreateInvite;
-use std::num::NonZeroU64;
+use serenity::builder::{CreateInvite, EditMessage};
 
 /// Guild base command
 #[poise::command(
@@ -26,13 +25,13 @@ pub async fn guild(_ctx: Context<'_>) -> Result<(), Error> {
     check = "checks::is_admin"
 )]
 pub async fn staff_guildlist(ctx: Context<'_>) -> Result<(), Error> {
-    let guilds = ctx.discord().cache.guilds();
+    let guilds = ctx.serenity_context().cache.guilds();
 
     let mut guild_list = String::new();
 
     for guild in guilds.iter() {
         let name = guild
-            .name(ctx.discord())
+            .name(ctx.serenity_context())
             .unwrap_or_else(|| "Unknown".to_string())
             + " ("
             + &guild.to_string()
@@ -57,9 +56,9 @@ pub async fn staff_guilddel(
     ctx: Context<'_>,
     #[description = "The guild ID to remove"] guild: String,
 ) -> Result<(), Error> {
-    let gid = guild.parse::<NonZeroU64>()?;
+    let gid = guild.parse::<GuildId>()?;
 
-    ctx.discord().http.delete_guild(GuildId(gid)).await?;
+    ctx.serenity_context().http.delete_guild(gid).await?;
 
     ctx.say("Removed guild").await?;
 
@@ -78,9 +77,9 @@ pub async fn staff_guildleave(
     ctx: Context<'_>,
     #[description = "The guild ID to leave"] guild: String,
 ) -> Result<(), Error> {
-    let gid = guild.parse::<NonZeroU64>()?;
+    let gid = guild.parse::<GuildId>()?;
 
-    ctx.discord().http.leave_guild(GuildId(gid)).await?;
+    ctx.serenity_context().http.leave_guild(gid).await?;
 
     ctx.say("Removed guild").await?;
 
@@ -118,67 +117,74 @@ pub async fn approveonboard(
     let data = ctx.data();
 
     let mut tx = data.pool.begin().await?;
-    
+
     // Check onboard state of user
     let onboard_state = sqlx::query!(
-        "SELECT staff_onboard_state FROM users WHERE user_id = $1 FOR UPDATE",
-        member.id.to_string()
+        "SELECT id, guild_id FROM staff_onboardings WHERE user_id = $1 AND state = $2 AND NOW() - created_at < INTERVAL '3 hours' ORDER BY created_at DESC LIMIT 1",
+        member.id.to_string(),
+        crate::states::OnboardState::PendingManagerReview.to_string()
     )
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await?;
 
     let force = force.unwrap_or(false);
-    if !force {
-        log::info!("Force approving user: {}", member.id);
-        if onboard_state.staff_onboard_state
-            != crate::states::OnboardState::PendingManagerReview.to_string()
-            && onboard_state.staff_onboard_state != crate::states::OnboardState::Denied.to_string()
-        {
-            return Err(format!(
-                "User is not pending manager review and currently has state of: {}",
-                onboard_state.staff_onboard_state
-            )
-            .into());
+
+    if let Some(onboard_state) = onboard_state {
+        // Update onboard state of user
+        sqlx::query!(
+            "UPDATE staff_onboardings SET state = $1 WHERE id = $2",
+            crate::states::OnboardState::Completed.to_string(),
+            onboard_state.id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        let guild_id = onboard_state.guild_id.parse::<GuildId>()?;
+        
+        crate::setup::delete_or_leave_guild(&data.cache_http, guild_id).await?;        
+    } else {
+        if !force {
+            return Err("User does not have any onboardings pending manager review".into());
         }
+
+        sqlx::query!(
+            "INSERT INTO staff_onboardings (user_id, guild_id, state) VALUES ($1, $2, $3)",
+            member.id.to_string(),
+            "force_approved".to_string() + &crate::crypto::gen_random(12),
+            crate::states::OnboardState::Completed.to_string(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
     }
 
-    // Update onboard state of user
-    sqlx::query!(
-        "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
-        crate::states::OnboardState::Completed.to_string(),
-        member.id.to_string()
-    )
-    .execute(&mut *tx)
-    .await?;
-
     // Remove awaiting staff role
-    let mut main_member = ctx.discord().cache.member(crate::config::CONFIG.servers.main, member.id).ok_or("Could not find member in main server")?;
+    let main_member = ctx.serenity_context().cache.member(crate::config::CONFIG.servers.main, member.id).ok_or("Could not find member in main server")?.clone();
 
-    if main_member.roles.contains(&crate::config::CONFIG.roles.awaiting_staff.into()) {
+    if main_member.roles.contains(&crate::config::CONFIG.roles.awaiting_staff) {
         main_member.remove_role(
-            &ctx.discord().http,
+            &ctx.serenity_context().http,
             crate::config::CONFIG.roles.awaiting_staff,
         ).await?;
     }
 
-    if !main_member.roles.contains(&crate::config::CONFIG.roles.main_server_web_moderator.into()) {
+    if !main_member.roles.contains(&crate::config::CONFIG.roles.main_server_web_moderator) {
         main_member.add_role(
-            &ctx.discord().http,
+            &ctx.serenity_context().http,
             crate::config::CONFIG.roles.main_server_web_moderator
         )
         .await?;
     }
 
     // Create invite in staff server 
-    let staff_server_invite = {
-        let channel = ctx.discord().cache.guild_channel(crate::config::CONFIG.channels.onboarding_channel).ok_or("Could not find onboarding channel")?.clone();
-
-        channel.create_invite(&ctx.discord(), CreateInvite::new().max_uses(1).max_age(0).audit_log_reason("Invite new staff member")).await?
-    };
+    let staff_server_invite = crate::config::CONFIG.channels.onboarding_channel.create_invite(&ctx.serenity_context(), CreateInvite::new().max_uses(1).max_age(0).audit_log_reason("Invite new staff member")).await?;
 
     // DM user that they have been approved
     let _ = member.dm(
-        &ctx.discord(),
+        &ctx.serenity_context(),
         CreateMessage::new()
         .content(
             format!("Your onboarding request has been approved. You may now begin approving/denying bots
@@ -192,22 +198,6 @@ pub async fn approveonboard(
     ).await?;
 
     ctx.say("Onboarding request approved!").await?;
-
-    // Delete the onboarding server
-    let staff_onboard_guild = sqlx::query!(
-        "SELECT staff_onboard_guild FROM users WHERE user_id = $1",
-        member.id.to_string()
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-
-    if let Some(guild) = staff_onboard_guild.staff_onboard_guild {
-        if let Ok(guild) = guild.parse::<NonZeroU64>() {
-            crate::setup::delete_or_leave_guild(&data.cache_http, GuildId(guild)).await?;
-        }
-    }
-
-    tx.commit().await?;
 
     Ok(())
 }
@@ -224,39 +214,59 @@ pub async fn approveonboard(
 pub async fn denyonboard(
     ctx: crate::Context<'_>,
     #[description = "The staff id"] user: User,
+    #[description = "Whether or not to force deny. Not recommended unless required"] force: Option<bool>,
 ) -> Result<(), Error> {
+    ctx.defer().await?;
+
     let data = ctx.data();
+
+    let mut tx = data.pool.begin().await?;
 
     // Check onboard state of user
     let onboard_state = sqlx::query!(
-        "SELECT staff_onboard_state FROM users WHERE user_id = $1",
-        user.id.to_string()
+        "SELECT id, guild_id FROM staff_onboardings WHERE user_id = $1 AND state = $2 AND NOW() - created_at < INTERVAL '3 hours' ORDER BY created_at DESC LIMIT 1",
+        user.id.to_string(),
+        crate::states::OnboardState::PendingManagerReview.to_string()
     )
-    .fetch_one(&data.pool)
+    .fetch_optional(&mut *tx)
     .await?;
 
-    if onboard_state.staff_onboard_state
-        != crate::states::OnboardState::PendingManagerReview.to_string()
-        && onboard_state.staff_onboard_state != crate::states::OnboardState::Completed.to_string()
-    {
-        return Err(format!(
-            "User is not pending manager review and currently has state of: {}",
-            onboard_state.staff_onboard_state
+    let force = force.unwrap_or(false);
+
+    if let Some(onboard_state) = onboard_state {
+        // Update onboard state of user
+        sqlx::query!(
+            "UPDATE staff_onboardings SET state = $1 WHERE id = $2",
+            crate::states::OnboardState::Completed.to_string(),
+            onboard_state.id
         )
-        .into());
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        let guild_id = onboard_state.guild_id.parse::<GuildId>()?;
+        
+        crate::setup::delete_or_leave_guild(&data.cache_http, guild_id).await?;        
+    } else {
+        if !force {
+            return Err("User does not have any onboardings pending manager review".into());
+        }
+
+        sqlx::query!(
+            "INSERT INTO staff_onboardings (user_id, guild_id, state) VALUES ($1, $2, $3)",
+            user.id.to_string(),
+            "force_approved".to_string() + &crate::crypto::gen_random(12),
+            crate::states::OnboardState::Denied.to_string(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
     }
 
-    // Update onboard state of user
-    sqlx::query!(
-        "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
-        crate::states::OnboardState::Denied.to_string(),
-        user.id.to_string()
-    )
-    .execute(&data.pool)
-    .await?;
-
     // DM user that they have been denied
-    let _ = user.dm(&ctx.discord().http, CreateMessage::new().content("Your onboarding request has been denied. Please contact a manager for more information")).await?;
+    let _ = user.dm(&ctx.serenity_context().http, CreateMessage::new().content("Your onboarding request has been denied. Please contact a manager for more information")).await?;
 
     ctx.say("Onboarding request denied!").await?;
 
@@ -278,8 +288,8 @@ pub async fn resetonboard(
 ) -> Result<(), Error> {
     let data = ctx.data();
 
-    let builder = CreateReply::new()
-        .content("Are you sure you wish to reset this user's onboard state and force them to redo onboarding?")
+    let builder = CreateReply::default()
+        .content("Are you sure you wish to void all onboardings for this user and force them to redo onboarding?")
         .components(
             vec![
                 CreateActionRow::Buttons(
@@ -294,11 +304,11 @@ pub async fn resetonboard(
     let mut msg = ctx.send(builder.clone()).await?.into_message().await?;
 
     let interaction = msg
-        .await_component_interaction(ctx.discord())
+        .await_component_interaction(ctx.serenity_context())
         .author_id(ctx.author().id)
         .await;
 
-    msg.edit(ctx.discord(), builder.to_prefix_edit().components(vec![]))
+    msg.edit(ctx.serenity_context(), builder.to_prefix_edit(EditMessage::new()).components(vec![]))
         .await?; // remove buttons after button press
 
     let pressed_button_id = match &interaction {
@@ -310,21 +320,19 @@ pub async fn resetonboard(
     };
 
     if pressed_button_id == "cancel" {
-        ctx.say("Cancelled").await?;
         return Ok(());
     }
 
     // Update onboard state of a user
     sqlx::query!(
-        "UPDATE users SET staff_onboard_guild = NULL, staff_onboard_state = $1, staff_onboard_last_start_time = NOW() WHERE user_id = $2",
-        crate::states::OnboardState::Pending.to_string(),
+        "UPDATE staff_onboardings SET void = true WHERE user_id = $1",
         user.id.to_string()
     )
     .execute(&data.pool)
     .await?;
 
     // DM user that they have been force reset
-    let _ = user.dm(&ctx.discord().http, CreateMessage::new().content("Your onboarding request has been force reset. Please contact a manager for more information. You will, in most cases, need to redo onboarding")).await?;
+    let _ = user.dm(&ctx.serenity_context().http, CreateMessage::new().content("Your onboarding request has been force reset. Please contact a manager for more information. You will, in most cases, need to redo onboarding")).await?;
 
     ctx.say("Onboarding request reset!").await?;
 
