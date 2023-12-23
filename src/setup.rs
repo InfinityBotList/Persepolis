@@ -1,4 +1,4 @@
-use crate::{cache::CacheHttpImpl, config, crypto::gen_random, Context, Error};
+use crate::{cache::CacheHttpImpl, crypto::gen_random, Context, Error};
 use poise::serenity_prelude::{
     ChannelId, CreateActionRow, CreateButton, CreateChannel, CreateEmbed, EditMessage, EditRole,
     GuildId, Mentionable, Message, Permissions, RoleId,
@@ -76,11 +76,11 @@ pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Erro
                 CreateActionRow::Buttons(
                     vec![
                         CreateButton::new_link(
-                            format!(
-                                "{}/{}",
-                                config::CONFIG.persepolis_domain,
-                                ctx.author().id
-                            )
+                            {
+                                let url = crate::server::ConfirmLoginState::JoinOnboardingServer(ctx.author().id).make_login_url(&ctx.cache().current_user().id.to_string());
+
+                                url.clone()
+                            }
                         )
                         .label("Join")
                     ]

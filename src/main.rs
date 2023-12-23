@@ -1,6 +1,6 @@
 use log::{error, info};
-use poise::serenity_prelude::FullEvent;
-use sqlx::postgres::PgPoolOptions;
+use poise::serenity_prelude::{GuildId, FullEvent};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 
 use crate::cache::CacheHttpImpl;
 
@@ -25,7 +25,50 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 pub struct Data {
     pool: sqlx::PgPool,
     cache_http: cache::CacheHttpImpl,
-    redis: deadpool_redis::Pool,
+}
+
+async fn clean_out(pool: PgPool, cache_http: CacheHttpImpl) -> ! {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+    loop {
+        interval.tick().await;
+
+        if let Err(e) = clean_out_impl(&pool, &cache_http).await {
+            error!("Error while cleaning out: {}", e);
+        }
+    }
+}
+
+async fn clean_out_impl(pool: &PgPool, cache_http: &CacheHttpImpl) -> Result<(), Error> {
+    let rows = sqlx::query!(
+        "
+SELECT id, user_id, guild_id FROM staff_onboardings
+-- The guild in question should never be pending manager review
+WHERE state != $1
+-- Nor complete (!= $2)
+AND state != $2
+-- And has been created more than three hours ago
+AND created_at < NOW() - INTERVAL '3 hours'
+        ",
+        states::OnboardState::PendingManagerReview.to_string(),
+        states::OnboardState::Completed.to_string()
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for row in rows {
+        sqlx::query!(
+            "DELETE FROM staff_onboardings WHERE id = $1",
+            row.id
+        )
+        .execute(pool)
+        .await?;
+
+        let guild_id = row.guild_id.parse::<GuildId>()?;
+
+        setup::delete_or_leave_guild(cache_http, guild_id).await?;
+    }
+
+    Ok(())
 }
 
 #[poise::command(prefix_command)]
@@ -100,7 +143,11 @@ async fn event_listener(event: &FullEvent, user_data: &Data) -> Result<(), Error
 
             tokio::task::spawn(server::setup_server(
                 user_data.pool.clone(),
-                user_data.redis.clone(),
+                user_data.cache_http.clone(),
+            ));
+
+            tokio::task::spawn(clean_out(
+                user_data.pool.clone(),
                 user_data.cache_http.clone(),
             ));
         }
@@ -189,8 +236,6 @@ async fn main() {
                         .connect(&config::CONFIG.database_url)
                         .await
                         .expect("Could not initialize connection"),
-                    redis: deadpool_redis::Config::from_url("redis://localhost")
-                    .create_pool(Some(deadpool_redis::Runtime::Tokio1)).unwrap(),
                 })
             })
         },

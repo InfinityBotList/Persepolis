@@ -100,10 +100,9 @@ pub async fn setup_onboarding(ctx: Context<'_>) -> Result<bool, Error> {
             return Err(
                 format!("You are currently awaiting manager review! Contact management if you want to check the status on this!
 
-If you accidentally left the onboarding server, you can rejoin using {}/{}
+If you accidentally left the onboarding server, you can rejoin using {}
                 ", 
-                    config::CONFIG.persepolis_domain,
-                    ctx.author().id
+                    crate::server::ConfirmLoginState::JoinOnboardingServer(ctx.author().id).make_login_url(&ctx.cache().current_user().id.to_string()),
                 ).into()
             )
         },
@@ -198,9 +197,8 @@ If you accidentally left the onboarding server, you can rejoin using {}/{}
     {
         // They're not in the right guild, so we need to ask them to move
         return Err(format!(
-            "You are not in the correct guild! Go to {}/{}",
-            config::CONFIG.persepolis_domain,
-            ctx.author().id
+            "You are not in the correct guild! Go to {}",
+            crate::server::ConfirmLoginState::JoinOnboardingServer(ctx.author().id).make_login_url(&ctx.cache().current_user().id.to_string()),
         )
         .into());
     }

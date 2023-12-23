@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, str::FromStr, fmt::{Display, Formatter}};
 
 use axum::{
     extract::{Path, Query, State},
@@ -10,7 +10,7 @@ use axum::{
 };
 use log::info;
 use poise::serenity_prelude::{AddMember, GuildId, UserId};
-use rand::seq::SliceRandom;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serenity::{all::ChannelId, json::json};
 use sqlx::{PgPool, types::uuid};
@@ -23,18 +23,83 @@ use crate::{
     setup::{get_onboard_user_role, setup_readme},
 };
 
+pub enum ConfirmLoginState {
+    JoinOnboardingServer(UserId),
+    CreateSession(String),
+}
+
+impl FromStr for ConfirmLoginState {
+    type Err = crate::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let split = s.split('.').collect::<Vec<&str>>();
+
+        if split.len() != 2 {
+            return Err("Invalid state".into());
+        }
+
+        match split[0] {
+            "create_session" => {
+                // Hex decode the second bit
+                let decoded = data_encoding::HEXLOWER.decode(split[1].as_bytes())?;
+
+                let decoded_str = String::from_utf8(decoded)?;
+
+                Ok(ConfirmLoginState::CreateSession(decoded_str))
+            },
+            "jos" => {
+                let uid = split[1].parse::<UserId>()?;
+
+                Ok(ConfirmLoginState::JoinOnboardingServer(uid))
+            },
+            _ => Err("Invalid state".into())
+        }
+    }
+}
+
+impl Display for ConfirmLoginState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfirmLoginState::JoinOnboardingServer(uid) => write!(f, "jos.{}", uid),
+            ConfirmLoginState::CreateSession(redirect_url) => {
+                let encoded = data_encoding::HEXLOWER.encode(redirect_url.as_bytes());
+                write!(f, "create_session.{}", encoded)
+            },
+        }
+    }
+}
+
+impl ConfirmLoginState {
+    /// Returns the scopes needed for this state
+    pub fn needed_scopes(&self) -> Vec<&str> {
+        match self {
+            ConfirmLoginState::JoinOnboardingServer(_) => vec!["identify", "guilds.join"],
+            ConfirmLoginState::CreateSession(_) => vec!["identify"],
+        }
+    }
+
+    /// Returns the URL to redirect the user to for login
+    pub fn make_login_url(&self, client_id: &str) -> String {
+        format!(
+            "https://discord.com/api/oauth2/authorize?client_id={}&redirect_uri={}/confirm-login&scope={}&state={}&response_type=code",
+            client_id,
+            config::CONFIG.persepolis_domain,
+            self.needed_scopes().join("%20"),
+            self
+        )
+    }
+}
+
 pub struct AppState {
     pub cache_http: CacheHttpImpl,
     pub pool: PgPool,
-    pub redis: deadpool_redis::Pool
 }
 
-pub async fn setup_server(pool: PgPool, redis: deadpool_redis::Pool, cache_http: CacheHttpImpl) {
-    let shared_state = Arc::new(AppState { pool, cache_http, redis });
+pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
+    let shared_state = Arc::new(AppState { pool, cache_http });
 
     let app = Router::new()
-        .route("/:uid", get(create_login))
-        .route("/join-onboarding-server", get(join_onboarding_server))
+        .route("/create-login", get(create_login))
+        .route("/confirm-login", get(confirm_login))
         //.route("/quiz", post(create_quiz))
         .route("/resp/:rid", get(get_onboard_response))
         //.route("/submit", post(submit_onboarding))
@@ -84,11 +149,14 @@ impl IntoResponse for ServerResponse {
     }
 }
 
-async fn create_login(State(app_state): State<Arc<AppState>>, Path(uid): Path<UserId>) -> Redirect {
-    // Redirect user to the login page
-    let url = format!("https://discord.com/api/oauth2/authorize?client_id={}&redirect_uri={}/join-onboarding-server&scope={}&state={}&response_type=code", app_state.cache_http.cache.current_user().id, config::CONFIG.persepolis_domain, "identify guilds.join", uid);
+#[derive(Deserialize)]
+struct CreateLogin {
+    state: String,
+}
 
-    Redirect::temporary(&url)
+async fn create_login(State(app_state): State<Arc<AppState>>, Query(cl): Query<CreateLogin>) -> Result<Redirect, ServerError> {
+    let state = ConfirmLoginState::from_str(&cl.state).map_err(|e| ServerError::Error(e.to_string()))?;
+        Ok(Redirect::temporary(&state.make_login_url(&app_state.cache_http.cache.current_user().id.to_string())))
 }
 
 #[derive(Deserialize)]
@@ -98,15 +166,17 @@ struct AccessToken {
 }
 
 #[derive(Deserialize)]
-struct JoinOnboardingServer {
+struct ConfirmLogin {
     code: String,
-    state: UserId,
+    state: String,
 }
 
-async fn join_onboarding_server(
+async fn confirm_login(
     State(app_state): State<Arc<AppState>>,
-    data: Query<JoinOnboardingServer>,
+    Query(data): Query<ConfirmLogin>,
 ) -> Result<Redirect, ServerError> {
+    let state = ConfirmLoginState::from_str(data.state.as_str()).map_err(|_| ServerError::Error("Invalid state".to_string()))?;
+
     // Create access token from code
     let client = reqwest::Client::new();
 
@@ -148,79 +218,143 @@ async fn join_onboarding_server(
         .await
         .map_err(|_| ServerError::Error("Could not deserialize response".to_string()))?;
 
-    if user.id != data.state {
-        // Check if admin
-        let perms = crate::perms::get_user_perms(&app_state.pool, &data.state.to_string())
-            .await
-            .map_err(|_| ServerError::Error("Could not get user perms".to_string()))?
-            .resolve();
+    // Check if staff member or awaiting staff
+    let row = sqlx::query!(
+        "SELECT positions FROM staff_members WHERE user_id = $1",
+        user.id.to_string()
+    )
+    .fetch_optional(&app_state.pool)
+    .await
+    .map_err(|_| ServerError::Error("Could not get staff member data from database".to_string()))?;
 
-        if !kittycat::perms::has_perm(&perms, &kittycat::perms::build("persepolis", "join_onboarding_servers")) {
-            return Err(ServerError::Error(
-                "Only staff members with the `persepolis.join_onboarding_servers` permission and the user themselves can join onboarding servers"
-                    .to_string(),
-            ));
+    let is_staff = {
+        if row.is_some() && !row.unwrap().positions.is_empty() {
+            true
+        } else {
+            let member = app_state
+                .cache_http
+                .cache
+                .member(config::CONFIG.servers.main, user.id);
+
+            if let Some(member) = member {
+                member
+                    .roles
+                    .contains(&config::CONFIG.roles.awaiting_staff)
+            } else {
+                false
+            }
         }
-    }
+    };
 
-    if !access_token.scope.contains("guilds.join") {
+    if !is_staff {
         return Err(ServerError::Error(
-            "Invalid scope. Scope must be exactly contain guilds.join".to_string(),
+            "You are not a staff member or awaiting staff".to_string(),
         ));
     }
 
-    let guild_id = sqlx::query!(
-        "SELECT guild_id FROM staff_onboardings WHERE user_id = $1 AND state != $2 ORDER BY created_at DESC LIMIT 1",
-        data.state.to_string(),
-        crate::states::OnboardState::Completed.to_string()
-    )
-    .fetch_one(&app_state.pool)
-    .await
-    .map_err(|_| ServerError::Error("Could not get guild from database".to_string()))?;
-
-    let guild_id = guild_id.guild_id.parse::<GuildId>().map_err(|_| {
-        ServerError::Error("Could not parse guild id from database".to_string())
-    })?;
-    let channel_id = setup_readme(&app_state.cache_http, guild_id)
-        .await
-        .map_err(|_| ServerError::Error("Could not create invite".to_string()))?;
-
-    let guild_url = format!("https://discord.com/channels/{}/{}", guild_id, channel_id);
-
-    // Check that theyre not already on the server
-    if app_state
-        .cache_http
-        .cache
-        .member(guild_id, user.id)
-        .is_some()
-    {
-        Ok(Redirect::temporary(&guild_url))
-    } else {
-        // Add them to server first
-        let roles = if user.id == data.state {
-            vec![get_onboard_user_role(&app_state.cache_http, guild_id)
-                .await
-                .map_err(|_| {
-                    ServerError::Error("Could not get onboarding roles".to_string())
-                })?]
-        } else {
-            vec![]
-        };
-
-        guild_id
-            .add_member(
-                &app_state.cache_http.http,
-                user.id,
-                AddMember::new(access_token.access_token).roles(roles),
+    match state {
+        ConfirmLoginState::JoinOnboardingServer(uid) => {
+            if user.id != uid {
+                // Check if admin
+                let perms = crate::perms::get_user_perms(&app_state.pool, &uid.to_string())
+                    .await
+                    .map_err(|_| ServerError::Error("Could not get user perms".to_string()))?
+                    .resolve();
+        
+                if !kittycat::perms::has_perm(&perms, &kittycat::perms::build("persepolis", "join_onboarding_servers")) {
+                    return Err(ServerError::Error(
+                        "Only staff members with the `persepolis.join_onboarding_servers` permission and the user themselves can join onboarding servers"
+                            .to_string(),
+                    ));
+                }
+            }
+        
+            if !access_token.scope.contains("guilds.join") {
+                return Err(ServerError::Error(
+                    "Invalid scope. Scope must be exactly contain guilds.join".to_string(),
+                ));
+            }
+        
+            let guild_id = sqlx::query!(
+                "SELECT guild_id FROM staff_onboardings WHERE user_id = $1 AND state != $2 ORDER BY created_at DESC LIMIT 1",
+                uid.to_string(),
+                crate::states::OnboardState::Completed.to_string()
             )
+            .fetch_one(&app_state.pool)
             .await
-            .map_err(|err| {
-                ServerError::Error(
-                    "Could not add you to the guild".to_string() + &err.to_string(),
-                )
+            .map_err(|_| ServerError::Error("Could not get any pending onboarding guilds for you from database".to_string()))?;
+        
+            let guild_id = guild_id.guild_id.parse::<GuildId>().map_err(|_| {
+                ServerError::Error("Could not parse guild id from database".to_string())
             })?;
+            let channel_id = setup_readme(&app_state.cache_http, guild_id)
+                .await
+                .map_err(|_| ServerError::Error("Could not create invite".to_string()))?;
+        
+            let guild_url = format!("https://discord.com/channels/{}/{}", guild_id, channel_id);
+        
+            // Check that theyre not already on the server
+            if app_state
+                .cache_http
+                .cache
+                .member(guild_id, user.id)
+                .is_some()
+            {
+                Ok(Redirect::temporary(&guild_url))
+            } else {
+                // Add them to server first
+                let roles = if user.id == uid {
+                    vec![get_onboard_user_role(&app_state.cache_http, guild_id)
+                        .await
+                        .map_err(|_| {
+                            ServerError::Error("Could not get onboarding roles".to_string())
+                        })?]
+                } else {
+                    vec![]
+                };
+        
+                guild_id
+                    .add_member(
+                        &app_state.cache_http.http,
+                        user.id,
+                        AddMember::new(access_token.access_token).roles(roles),
+                    )
+                    .await
+                    .map_err(|err| {
+                        ServerError::Error(
+                            "Could not add you to the guild".to_string() + &err.to_string(),
+                        )
+                    })?;
+        
+                Ok(Redirect::temporary(&guild_url))
+            }
+        }
+        ConfirmLoginState::CreateSession(redirect_url) => {       
+            info!("Creating session for {}", user.id.to_string());     
+            // Create a random number between 4196 and 6000 for the token
+            let token = crate::crypto::gen_random(512);
 
-        Ok(Redirect::temporary(&guild_url))
+            sqlx::query!(
+                "INSERT INTO staffpanel__authchain (user_id, token, popplio_token, state) VALUES ($1, $2, $3, $4)",
+                user.id.to_string(),
+                token,
+                crate::crypto::gen_random(2048),
+                "persepolis.active"
+            )
+            .execute(&app_state.pool)
+            .await
+            .map_err(|_| ServerError::Error("Could not create session".to_string()))?;
+
+            Ok(Redirect::temporary(
+                &{
+                    if redirect_url.contains('?') {
+                        format!("{}&token={}.{}", redirect_url, user.id, token)
+                    } else {
+                        format!("{}?token={}.{}", redirect_url, user.id, token)
+                    }
+                }
+            ))
+        }
     }
 }
 
