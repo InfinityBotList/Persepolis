@@ -1,4 +1,4 @@
-use crate::{cache::CacheHttpImpl, crypto::gen_random, Context, Error};
+use crate::{cache::CacheHttpImpl, crypto::gen_random, Context, Error, server::types::login::ConfirmLoginState};
 use poise::serenity_prelude::{
     ChannelId, CreateActionRow, CreateButton, CreateChannel, CreateEmbed, EditMessage, EditRole,
     GuildId, Mentionable, Message, Permissions, RoleId,
@@ -77,7 +77,7 @@ pub async fn setup_guild(ctx: Context<'_>, msg: &mut Message) -> Result<(), Erro
                     vec![
                         CreateButton::new_link(
                             {
-                                let url = crate::server::ConfirmLoginState::JoinOnboardingServer(ctx.author().id).make_login_url(&ctx.cache().current_user().id.to_string());
+                                let url = ConfirmLoginState::JoinOnboardingServer(ctx.author().id).make_login_url(&ctx.cache().current_user().id.to_string());
 
                                 url.clone()
                             }

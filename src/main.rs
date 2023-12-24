@@ -141,7 +141,7 @@ async fn event_listener(event: &FullEvent, user_data: &Data) -> Result<(), Error
             .execute(&user_data.pool)
             .await?;
 
-            tokio::task::spawn(server::setup_server(
+            tokio::task::spawn(server::api::setup_server(
                 user_data.pool.clone(),
                 user_data.cache_http.clone(),
             ));

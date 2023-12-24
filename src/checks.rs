@@ -9,7 +9,7 @@ use sqlx::types::chrono;
 use crate::{
     config,
     setup::{delete_or_leave_guild, setup_guild},
-    states, Context, Error,
+    states, Context, Error, server::types::login::ConfirmLoginState,
 };
 
 pub async fn is_admin(ctx: Context<'_>) -> Result<bool, Error> {
@@ -102,7 +102,7 @@ pub async fn setup_onboarding(ctx: Context<'_>) -> Result<bool, Error> {
 
 If you accidentally left the onboarding server, you can rejoin using {}
                 ", 
-                    crate::server::ConfirmLoginState::JoinOnboardingServer(ctx.author().id).make_login_url(&ctx.cache().current_user().id.to_string()),
+                    ConfirmLoginState::JoinOnboardingServer(ctx.author().id).make_login_url(&ctx.cache().current_user().id.to_string()),
                 ).into()
             )
         },
@@ -198,7 +198,7 @@ If you accidentally left the onboarding server, you can rejoin using {}
         // They're not in the right guild, so we need to ask them to move
         return Err(format!(
             "You are not in the correct guild! Go to {}",
-            crate::server::ConfirmLoginState::JoinOnboardingServer(ctx.author().id).make_login_url(&ctx.cache().current_user().id.to_string()),
+            ConfirmLoginState::JoinOnboardingServer(ctx.author().id).make_login_url(&ctx.cache().current_user().id.to_string()),
         )
         .into());
     }

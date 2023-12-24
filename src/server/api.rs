@@ -23,69 +23,25 @@ use crate::{
     setup::{get_onboard_user_role, setup_readme},
 };
 
-pub enum ConfirmLoginState {
-    JoinOnboardingServer(UserId),
-    CreateSession(String),
+use super::types::login::ConfirmLoginState;
+
+struct Error {
+    status: StatusCode,
+    message: String,
 }
 
-impl FromStr for ConfirmLoginState {
-    type Err = crate::Error;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let split = s.split('.').collect::<Vec<&str>>();
-
-        if split.len() != 2 {
-            return Err("Invalid state".into());
-        }
-
-        match split[0] {
-            "create_session" => {
-                // Hex decode the second bit
-                let decoded = data_encoding::HEXLOWER.decode(split[1].as_bytes())?;
-
-                let decoded_str = String::from_utf8(decoded)?;
-
-                Ok(ConfirmLoginState::CreateSession(decoded_str))
-            },
-            "jos" => {
-                let uid = split[1].parse::<UserId>()?;
-
-                Ok(ConfirmLoginState::JoinOnboardingServer(uid))
-            },
-            _ => Err("Invalid state".into())
+impl Error {
+    fn new(e: impl Display) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: e.to_string(),
         }
     }
 }
 
-impl Display for ConfirmLoginState {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ConfirmLoginState::JoinOnboardingServer(uid) => write!(f, "jos.{}", uid),
-            ConfirmLoginState::CreateSession(redirect_url) => {
-                let encoded = data_encoding::HEXLOWER.encode(redirect_url.as_bytes());
-                write!(f, "create_session.{}", encoded)
-            },
-        }
-    }
-}
-
-impl ConfirmLoginState {
-    /// Returns the scopes needed for this state
-    pub fn needed_scopes(&self) -> Vec<&str> {
-        match self {
-            ConfirmLoginState::JoinOnboardingServer(_) => vec!["identify", "guilds.join"],
-            ConfirmLoginState::CreateSession(_) => vec!["identify"],
-        }
-    }
-
-    /// Returns the URL to redirect the user to for login
-    pub fn make_login_url(&self, client_id: &str) -> String {
-        format!(
-            "https://discord.com/api/oauth2/authorize?client_id={}&redirect_uri={}/confirm-login&scope={}&state={}&response_type=code",
-            client_id,
-            config::CONFIG.persepolis_domain,
-            self.needed_scopes().join("%20"),
-            self
-        )
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        (self.status, self.message).into_response()
     }
 }
 
@@ -100,6 +56,7 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
     let app = Router::new()
         .route("/create-login", get(create_login))
         .route("/confirm-login", get(confirm_login))
+        .route("/get-onboarding-code", post(get_onboarding_code))
         //.route("/quiz", post(create_quiz))
         .route("/resp/:rid", get(get_onboard_response))
         //.route("/submit", post(submit_onboarding))
@@ -123,40 +80,14 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
     }
 }
 
-enum ServerError {
-    Error(String),
-}
-
-impl IntoResponse for ServerError {
-    fn into_response(self) -> Response {
-        match self {
-            ServerError::Error(e) => (StatusCode::BAD_REQUEST, e).into_response(),
-        }
-    }
-}
-
-enum ServerResponse {
-    Response(String),
-    NoContent,
-}
-
-impl IntoResponse for ServerResponse {
-    fn into_response(self) -> Response {
-        match self {
-            ServerResponse::Response(e) => (StatusCode::OK, e).into_response(),
-            ServerResponse::NoContent => (StatusCode::NO_CONTENT, "").into_response(),
-        }
-    }
-}
-
 #[derive(Deserialize)]
 struct CreateLogin {
     state: String,
 }
 
-async fn create_login(State(app_state): State<Arc<AppState>>, Query(cl): Query<CreateLogin>) -> Result<Redirect, ServerError> {
-    let state = ConfirmLoginState::from_str(&cl.state).map_err(|e| ServerError::Error(e.to_string()))?;
-        Ok(Redirect::temporary(&state.make_login_url(&app_state.cache_http.cache.current_user().id.to_string())))
+async fn create_login(State(app_state): State<Arc<AppState>>, Query(cl): Query<CreateLogin>) -> Result<impl IntoResponse, Error> {
+    let state = ConfirmLoginState::from_str(&cl.state).map_err(|e| Error::new(e))?;
+        Ok(Redirect::temporary(&state.make_login_url(&app_state.cache_http.cache.current_user().id.to_string())).into_response())
 }
 
 #[derive(Deserialize)]
@@ -174,8 +105,8 @@ struct ConfirmLogin {
 async fn confirm_login(
     State(app_state): State<Arc<AppState>>,
     Query(data): Query<ConfirmLogin>,
-) -> Result<Redirect, ServerError> {
-    let state = ConfirmLoginState::from_str(data.state.as_str()).map_err(|_| ServerError::Error("Invalid state".to_string()))?;
+) -> Result<impl IntoResponse, Error> {
+    let state = ConfirmLoginState::from_str(data.state.as_str()).map_err(|_| Error::new("Invalid state"))?;
 
     // Create access token from code
     let client = reqwest::Client::new();
@@ -191,14 +122,14 @@ async fn confirm_login(
         }))
         .send()
         .await
-        .map_err(|_| ServerError::Error("Could not send request to get access token".to_string()))?
+        .map_err(|_| Error::new("Could not send request to get access token".to_string()))?
         .error_for_status()
-        .map_err(|e| ServerError::Error(format!("Could not get access token: {}", e)))?;
+        .map_err(|e| Error::new(format!("Could not get access token: {}", e)))?;
 
     let access_token = access_token
         .json::<AccessToken>()
         .await
-        .map_err(|_| ServerError::Error("Could not deserialize response".to_string()))?;
+        .map_err(|_| Error::new("Could not deserialize response".to_string()))?;
 
     // Get user from access token
     let user = client
@@ -209,14 +140,14 @@ async fn confirm_login(
         )
         .send()
         .await
-        .map_err(|_| ServerError::Error("Could not send request to get user".to_string()))?
+        .map_err(|_| Error::new("Could not send request to get user".to_string()))?
         .error_for_status()
-        .map_err(|_| ServerError::Error("Get User failed!".to_string()))?;
+        .map_err(|_| Error::new("Get User failed!".to_string()))?;
 
     let user = user
         .json::<serenity::model::user::User>()
         .await
-        .map_err(|_| ServerError::Error("Could not deserialize response".to_string()))?;
+        .map_err(|_| Error::new("Could not deserialize response".to_string()))?;
 
     // Check if staff member or awaiting staff
     let row = sqlx::query!(
@@ -225,7 +156,7 @@ async fn confirm_login(
     )
     .fetch_optional(&app_state.pool)
     .await
-    .map_err(|_| ServerError::Error("Could not get staff member data from database".to_string()))?;
+    .map_err(|_| Error::new("Could not get staff member data from database".to_string()))?;
 
     let is_staff = {
         if row.is_some() && !row.unwrap().positions.is_empty() {
@@ -247,9 +178,7 @@ async fn confirm_login(
     };
 
     if !is_staff {
-        return Err(ServerError::Error(
-            "You are not a staff member or awaiting staff".to_string(),
-        ));
+        return Err(Error::new("You are not a staff member or awaiting staff"));
     }
 
     match state {
@@ -258,21 +187,20 @@ async fn confirm_login(
                 // Check if admin
                 let perms = crate::perms::get_user_perms(&app_state.pool, &uid.to_string())
                     .await
-                    .map_err(|_| ServerError::Error("Could not get user perms".to_string()))?
+                    .map_err(|_| Error::new("Could not get user perms"))?
                     .resolve();
         
                 if !kittycat::perms::has_perm(&perms, &kittycat::perms::build("persepolis", "join_onboarding_servers")) {
-                    return Err(ServerError::Error(
-                        "Only staff members with the `persepolis.join_onboarding_servers` permission and the user themselves can join onboarding servers"
-                            .to_string(),
-                    ));
+                    return Err(
+                        Error::new("Only staff members with the `persepolis.join_onboarding_servers` permission and the user themselves can join onboarding servers")
+                    );
                 }
             }
         
             if !access_token.scope.contains("guilds.join") {
-                return Err(ServerError::Error(
-                    "Invalid scope. Scope must be exactly contain guilds.join".to_string(),
-                ));
+                return Err(
+                    Error::new("Invalid scope. Scope must be exactly contain guilds.join"),
+                );
             }
         
             let guild_id = sqlx::query!(
@@ -282,14 +210,16 @@ async fn confirm_login(
             )
             .fetch_one(&app_state.pool)
             .await
-            .map_err(|_| ServerError::Error("Could not get any pending onboarding guilds for you from database".to_string()))?;
+            .map_err(|_| Error::new("Could not get any pending onboarding guilds for you from database"))?;
         
-            let guild_id = guild_id.guild_id.parse::<GuildId>().map_err(|_| {
-                ServerError::Error("Could not parse guild id from database".to_string())
+            let guild_id = guild_id.guild_id.parse::<GuildId>().map_err(|e| {
+                Error::new(
+                    &format!("Could not parse guild id {}", e)
+                )
             })?;
             let channel_id = setup_readme(&app_state.cache_http, guild_id)
                 .await
-                .map_err(|_| ServerError::Error("Could not create invite".to_string()))?;
+                .map_err(|_| Error::new("Could not create invite"))?;
         
             let guild_url = format!("https://discord.com/channels/{}/{}", guild_id, channel_id);
         
@@ -300,15 +230,13 @@ async fn confirm_login(
                 .member(guild_id, user.id)
                 .is_some()
             {
-                Ok(Redirect::temporary(&guild_url))
+                Ok(Redirect::temporary(&guild_url).into_response())
             } else {
                 // Add them to server first
                 let roles = if user.id == uid {
                     vec![get_onboard_user_role(&app_state.cache_http, guild_id)
                         .await
-                        .map_err(|_| {
-                            ServerError::Error("Could not get onboarding roles".to_string())
-                        })?]
+                        .map_err(Error::new)?]
                 } else {
                     vec![]
                 };
@@ -321,12 +249,12 @@ async fn confirm_login(
                     )
                     .await
                     .map_err(|err| {
-                        ServerError::Error(
-                            "Could not add you to the guild".to_string() + &err.to_string(),
+                        Error::new(
+                            &format!("Could not add user to guild: {}", err)
                         )
                     })?;
         
-                Ok(Redirect::temporary(&guild_url))
+                Ok(Redirect::temporary(&guild_url).into_response())
             }
         }
         ConfirmLoginState::CreateSession(redirect_url) => {       
@@ -343,7 +271,7 @@ async fn confirm_login(
             )
             .execute(&app_state.pool)
             .await
-            .map_err(|_| ServerError::Error("Could not create session".to_string()))?;
+            .map_err(|_| Error::new("Could not create session".to_string()))?;
 
             Ok(Redirect::temporary(
                 &{
@@ -353,15 +281,143 @@ async fn confirm_login(
                         format!("{}?token={}.{}", redirect_url, user.id, token)
                     }
                 }
-            ))
+            ).into_response())
         }
     }
 }
 
-#[derive(Deserialize)]
-struct GetCode {
-    frag: String,
+#[derive(Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = ".generated/GetOnboardingCode.ts")]
+struct GetOnboardingCode {
+    login_token: String,
+    id: String,
 }
+
+#[axum_macros::debug_handler]
+async fn get_onboarding_code(
+    State(app_state): State<Arc<AppState>>,
+    Json(get_onboarding_code_req): Json<GetOnboardingCode>,
+) -> Result<impl IntoResponse, Error> {
+    let auth_data = super::auth::check_auth(
+        &app_state.pool,
+        &get_onboarding_code_req.login_token,
+    )
+    .await
+    .map_err(Error::new)?;
+
+    let mut tx = app_state
+        .pool
+        .begin()
+        .await
+        .map_err(|_| Error::new("Could not start transaction".to_string()))?;
+
+    let uuid = sqlx::types::uuid::Uuid::from_str(&get_onboarding_code_req.id)
+        .map_err(|_| Error::new("Invalid id".to_string()))?;
+
+    let rec = sqlx::query!(
+        "SELECT user_id, staff_verify_code FROM staff_onboardings WHERE id = $1 AND user_id = $2",
+        uuid,
+        auth_data.user_id
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|_| Error::new("Could not find onboarding response".to_string()))?;
+
+    let code = if let Some(code) = rec.staff_verify_code {
+        code
+    } else {
+        // Generate 76 character random string for onboard code
+        let onboard_code = crate::crypto::gen_random(76);
+
+        // Set onboard code for user
+        sqlx::query!(
+            "UPDATE staff_onboardings SET staff_verify_code = $1 WHERE id = $2 AND user_id = $3",
+            onboard_code,
+            uuid,
+            auth_data.user_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| Error::new("Could not set onboard code".to_string()))?;
+
+        onboard_code
+    };
+
+    tx.commit()
+        .await
+        .map_err(|_| Error::new("Could not commit transaction".to_string()))?;
+
+    Ok(code.into_response())
+}
+
+/*
+#[axum_macros::debug_handler]
+async fn get_onboarding_code(
+    State(app_state): State<Arc<AppState>>,
+    Json(get_onboarding_code_req): Json<GetOnboardingCode>,
+) -> Result<Json<OnboardingCode>, ServerError> {
+    let rec = sqlx::query!(
+        "SELECT ",
+        get_onboarding_code_req.user_id,
+        get_onboarding_code_req.token
+    )
+    .fetch_one(&app_state.pool)
+    .await
+    .map_err(|_| Error::new("Invalid user/token combination? Consider logging out and logging in again?".to_string()))?;
+
+    let onboard_code = crate::crypto::gen_random(76); // Generate 76 character random string for onboard code
+
+    // Set onboard code for user
+    sqlx::query!(
+        "UPDATE staff_onboardings SET staff_verify_code = $1 WHERE id = $2 AND user_id = $3",
+        onboard_code,
+        onboarding_id,
+        ctx.author().id.to_string()
+    )
+    .execute(&ctx.data().pool)
+    .await?;    
+
+    let id = rec
+        .staff_onboard_current_onboard_resp_id
+        .ok_or(Error::new(
+            "Could not find onboard_resp_id".to_string(),
+        ))?;
+
+    // Check onboard_resp with corresponding resp id
+    let resp = sqlx::query!(
+        "SELECT questions FROM onboard_data WHERE onboard_code = $1",
+        id
+    )
+    .fetch_one(&app_state.pool)
+    .await
+    .map_err(|_| {
+        Error::new("Fatal error: Could not find onboarding response".to_string())
+    })?;
+
+    let quiz_ver = resp
+        .questions
+        .get("quiz_ver")
+        .unwrap_or(&json!(0))
+        .as_i64()
+        .unwrap_or(0);
+
+    if quiz_ver != 1 {
+        // Corrupt data, reset questions and error
+        sqlx::query!(
+            "UPDATE onboard_data SET questions = $1 WHERE onboard_code = $2",
+            json!({}),
+            &id
+        )
+        .execute(&app_state.pool)
+        .await
+        .map_err(|_| Error::new("Could not reset questions".to_string()))?;
+
+        return Err(Error::new(
+            "Quiz could not be found and hence has been reset, reload the page and try again"
+                .to_string(),
+        ));
+    }
+}*/
 
 #[derive(Serialize, Deserialize, Clone, TS)]
 #[ts(export, export_to = ".generated/Verdict.ts")]
@@ -384,39 +440,39 @@ struct OnboardResponse {
 async fn get_onboard_response(
     State(app_state): State<Arc<AppState>>,
     Path(rid): Path<String>,
-) -> Result<Json<OnboardResponse>, ServerError> {
+) -> Result<Json<OnboardResponse>, Error> {
     let resp = sqlx::query!(
         "SELECT verdict, questions, answers, meta, user_id FROM staff_onboardings WHERE id::text = $1",
         rid.to_string()
     )
     .fetch_one(&app_state.pool)
     .await
-    .map_err(|_| ServerError::Error("Could not find onboarding response".to_string()))?;
+    .map_err(|_| Error::new("Could not find onboarding response".to_string()))?;
 
     let questions = if let Some(questions) = resp.questions {
         Some(serde_json::from_value::<Vec<Question>>(questions)
-            .map_err(|_| ServerError::Error("Could not parse questions".to_string()))?)
+            .map_err(|_| Error::new("Could not parse questions".to_string()))?)
     } else {
         None
     };
 
     let answers = if let Some(answers) = resp.answers {
         Some(serde_json::from_value::<HashMap<String, String>>(answers)
-            .map_err(|_| ServerError::Error("Could not parse answers".to_string()))?)
+            .map_err(|_| Error::new("Could not parse answers".to_string()))?)
     } else {
         None
     };
 
     let verdict = if let Some(verdict) = resp.verdict {
         Some(serde_json::from_value::<Verdict>(verdict)
-            .map_err(|_| ServerError::Error("Could not parse verdict".to_string()))?)
+            .map_err(|_| Error::new("Could not parse verdict".to_string()))?)
     } else {
         None
     };
 
     let meta = if let Some(meta) = resp.meta {
         Some(serde_json::from_value::<OnboardingMeta>(meta)
-            .map_err(|_| ServerError::Error("Could not parse meta".to_string()))?)
+            .map_err(|_| Error::new("Could not parse meta".to_string()))?)
     } else {
         None
     };
@@ -465,16 +521,16 @@ async fn create_quiz(
     )
     .fetch_one(&app_state.pool)
     .await
-    .map_err(|_| ServerError::Error("Invalid user/token combination? Consider logging out and logging in again?".to_string()))?;
+    .map_err(|_| Error::new("Invalid user/token combination? Consider logging out and logging in again?".to_string()))?;
 
     if rec.banned {
-        return Err(ServerError::Error(
+        return Err(Error::new(
             "You are banned from Infinity Bot List".to_string(),
         ));
     }
 
     if rec.staff_onboard_state != crate::states::OnboardState::InQuiz.to_string() {
-        return Err(ServerError::Error(
+        return Err(Error::new(
             "Paradise Protection Protocol is not enabled right now".to_string(),
         ));
     }
@@ -487,7 +543,7 @@ async fn create_quiz(
     .fetch_one(&app_state.pool)
     .await
     .map_err(|_| {
-        ServerError::Error("Fatal error: Could not find onboarding response".to_string())
+        Error::new("Fatal error: Could not find onboarding response".to_string())
     })?;
 
     let quiz_ver = resp
@@ -507,7 +563,7 @@ async fn create_quiz(
             for q in question_vals {
                 // Parse question as Question
                 let question: PublicQuestion = serde_json::from_value(q.clone()).map_err(|_| {
-                    ServerError::Error("Fatal error: Could not parse question".to_string())
+                    Error::new("Fatal error: Could not parse question".to_string())
                 })?;
 
                 questions.push(question);
@@ -591,7 +647,7 @@ async fn create_quiz(
 
     let id = rec
         .staff_onboard_current_onboard_resp_id
-        .ok_or(ServerError::Error(
+        .ok_or(Error::new(
             "Could not find onboard_resp_id".to_string(),
         ))?;
 
@@ -602,7 +658,7 @@ async fn create_quiz(
     )
     .execute(&app_state.pool)
     .await
-    .map_err(|_| ServerError::Error("Could not save questions".to_string()))?;
+    .map_err(|_| Error::new("Could not save questions".to_string()))?;
 
     // Convert final questions to PublicQuestion
 
@@ -648,23 +704,23 @@ async fn submit_onboarding(
     )
     .fetch_one(&app_state.pool)
     .await
-    .map_err(|_| ServerError::Error("Invalid user/token combination? Consider logging out and logging in again?".to_string()))?;
+    .map_err(|_| Error::new("Invalid user/token combination? Consider logging out and logging in again?".to_string()))?;
 
     if rec.banned {
-        return Err(ServerError::Error(
+        return Err(Error::new(
             "You are banned from Infinity Bot List".to_string(),
         ));
     }
 
     if rec.staff_onboard_state != crate::states::OnboardState::InQuiz.to_string() {
-        return Err(ServerError::Error(
+        return Err(Error::new(
             "Paradise Protection Protocol is not enabled right now".to_string(),
         ));
     }
 
     let id = rec
         .staff_onboard_current_onboard_resp_id
-        .ok_or(ServerError::Error(
+        .ok_or(Error::new(
             "Could not find onboard_resp_id".to_string(),
         ))?;
 
@@ -676,7 +732,7 @@ async fn submit_onboarding(
     .fetch_one(&app_state.pool)
     .await
     .map_err(|_| {
-        ServerError::Error("Fatal error: Could not find onboarding response".to_string())
+        Error::new("Fatal error: Could not find onboarding response".to_string())
     })?;
 
     let quiz_ver = resp
@@ -695,9 +751,9 @@ async fn submit_onboarding(
         )
         .execute(&app_state.pool)
         .await
-        .map_err(|_| ServerError::Error("Could not reset questions".to_string()))?;
+        .map_err(|_| Error::new("Could not reset questions".to_string()))?;
 
-        return Err(ServerError::Error(
+        return Err(Error::new(
             "Quiz could not be found and hence has been reset, reload the page and try again"
                 .to_string(),
         ));
@@ -706,7 +762,7 @@ async fn submit_onboarding(
     let user_id_snow = submit_onboarding_req
         .user_id
         .parse::<UserId>()
-        .map_err(|_| ServerError::Error("Invalid user id".to_string()))?;
+        .map_err(|_| Error::new("Invalid user id".to_string()))?;
 
     if !crate::finish::check_code(
         &app_state.pool,
@@ -714,10 +770,10 @@ async fn submit_onboarding(
         &submit_onboarding_req.sv_code,
     )
     .await
-    .map_err(|e| ServerError::Error(e.to_string()))?
+    .map_err(|e| Error::new(e.to_string()))?
     {
         // Incorrect code
-        return Err(ServerError::Error("Incorrect code".to_string()));
+        return Err(Error::new("Incorrect code".to_string()));
     }
 
     // Next parse the questions in DB
@@ -730,7 +786,7 @@ async fn submit_onboarding(
         for q in question_vals {
             // Parse question as Question
             let question: Question = serde_json::from_value(q.clone()).map_err(|_| {
-                ServerError::Error("Fatal error: Could not parse question".to_string())
+                Error::new("Fatal error: Could not parse question".to_string())
             })?;
 
             questions.push(question);
@@ -742,28 +798,28 @@ async fn submit_onboarding(
         let answer = submit_onboarding_req
             .quiz_answers
             .get(&question.question)
-            .ok_or(ServerError::Error(
+            .ok_or(Error::new(
                 "Missing answer for ".to_string() + &question.question,
             ))?;
 
         match question.data {
             QuestionData::Short => {
                 if answer.len() < 50 {
-                    return Err(ServerError::Error(
+                    return Err(Error::new(
                         "Short answer questions must be at least 50 characters long".to_string(),
                     ));
                 }
             }
             QuestionData::Long => {
                 if answer.len() < 750 {
-                    return Err(ServerError::Error(
+                    return Err(Error::new(
                         "Long answer questions must be at least 750 characters long".to_string(),
                     ));
                 }
             }
             QuestionData::MultipleChoice(ref choices) => {
                 if !choices.contains(answer) {
-                    return Err(ServerError::Error(
+                    return Err(Error::new(
                         "Invalid answer for multiple choice question".to_string(),
                     ));
                 }
@@ -776,30 +832,30 @@ async fn submit_onboarding(
         .pool
         .begin()
         .await
-        .map_err(|_| ServerError::Error("Could not start transaction".to_string()))?;
+        .map_err(|_| Error::new("Could not start transaction".to_string()))?;
 
     sqlx::query!(
         "UPDATE onboard_data SET questions = $1, answers = $2, meta = $3 WHERE onboard_code = $4",
         serde_json::to_value(questions).map_err(|_| {
-            ServerError::Error("Fatal error: Could not serialize questions".to_string())
+            Error::new("Fatal error: Could not serialize questions".to_string())
         })?,
         serde_json::to_value(submit_onboarding_req.quiz_answers)
-            .map_err(|_| ServerError::Error("Could not serialize answers".to_string()))?,
+            .map_err(|_| Error::new("Could not serialize answers".to_string()))?,
         serde_json::to_value(OnboardingMeta {
             start_time: rec
                 .staff_onboard_last_start_time
-                .ok_or(ServerError::Error(
+                .ok_or(Error::new(
                     "Could not find last start time".to_string()
                 ))?
                 .timestamp(),
             end_time: Utc::now().timestamp()
         })
-        .map_err(|_| ServerError::Error("Could not serialize meta".to_string()))?,
+        .map_err(|_| Error::new("Could not serialize meta".to_string()))?,
         &id
     )
     .execute(&mut tx)
     .await
-    .map_err(|_| ServerError::Error("Could not save answers".to_string()))?;
+    .map_err(|_| Error::new("Could not save answers".to_string()))?;
 
     // Set state to PendingManagerReview
     sqlx::query!(
@@ -809,7 +865,7 @@ async fn submit_onboarding(
     )
     .execute(&mut tx)
     .await
-    .map_err(|_| ServerError::Error("Could not update state".to_string()))?;
+    .map_err(|_| Error::new("Could not update state".to_string()))?;
 
     // Send message on discord
     crate::config::CONFIG.channels.onboarding_channel.say(
@@ -820,11 +876,11 @@ async fn submit_onboarding(
             crate::config::CONFIG.frontend_url,
             id
         )
-    ).await.map_err(|_| ServerError::Error("Could not send message on discord".to_string()))?;
+    ).await.map_err(|_| Error::new("Could not send message on discord".to_string()))?;
 
     tx.commit()
         .await
-        .map_err(|_| ServerError::Error("Could not commit transaction".to_string()))?;
+        .map_err(|_| Error::new("Could not commit transaction".to_string()))?;
 
     Ok(ServerResponse::NoContent)
 }
