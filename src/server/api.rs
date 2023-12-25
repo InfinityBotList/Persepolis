@@ -23,7 +23,7 @@ use crate::{
     setup::{get_onboard_user_role, setup_readme},
 };
 
-use super::types::login::ConfirmLoginState;
+use super::types::{login::ConfirmLoginState, auth::{GetAuthData, CreateLogin}, oauth2::{ConfirmLogin, AccessTokenResponse}};
 
 struct Error {
     status: StatusCode,
@@ -56,7 +56,8 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
     let app = Router::new()
         .route("/create-login", get(create_login))
         .route("/confirm-login", get(confirm_login))
-        .route("/get-onboarding-code", post(get_onboarding_code))
+        .route("/auth-data", post(get_auth_data))
+        .route("/onboarding-code", post(get_onboarding_code))
         //.route("/quiz", post(create_quiz))
         .route("/resp/:rid", get(get_onboard_response))
         //.route("/submit", post(submit_onboarding))
@@ -80,26 +81,21 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
     }
 }
 
-#[derive(Deserialize)]
-struct CreateLogin {
-    state: String,
+
+async fn get_auth_data(State(app_state): State<Arc<AppState>>, Json(gad): Json<GetAuthData>) -> Result<impl IntoResponse, Error> {
+    let auth_data = super::auth::check_auth(
+        &app_state.pool,
+        &gad.login_token,
+    )
+    .await
+    .map_err(Error::new)?;
+
+    Ok(Json(auth_data))
 }
 
 async fn create_login(State(app_state): State<Arc<AppState>>, Query(cl): Query<CreateLogin>) -> Result<impl IntoResponse, Error> {
-    let state = ConfirmLoginState::from_str(&cl.state).map_err(|e| Error::new(e))?;
+    let state = ConfirmLoginState::from_str(&cl.state).map_err(Error::new)?;
         Ok(Redirect::temporary(&state.make_login_url(&app_state.cache_http.cache.current_user().id.to_string())).into_response())
-}
-
-#[derive(Deserialize)]
-struct AccessToken {
-    access_token: String,
-    scope: String,
-}
-
-#[derive(Deserialize)]
-struct ConfirmLogin {
-    code: String,
-    state: String,
 }
 
 async fn confirm_login(
@@ -127,7 +123,7 @@ async fn confirm_login(
         .map_err(|e| Error::new(format!("Could not get access token: {}", e)))?;
 
     let access_token = access_token
-        .json::<AccessToken>()
+        .json::<AccessTokenResponse>()
         .await
         .map_err(|_| Error::new("Could not deserialize response".to_string()))?;
 
@@ -257,7 +253,11 @@ async fn confirm_login(
                 Ok(Redirect::temporary(&guild_url).into_response())
             }
         }
-        ConfirmLoginState::CreateSession(redirect_url) => {       
+        ConfirmLoginState::CreateSession(url) => {  
+            if !url.starts_with(&crate::config::CONFIG.panel_url) && !url.starts_with("http://localhost") {
+                return Err(Error::new("Invalid url".to_string()));
+            }
+     
             info!("Creating session for {}", user.id.to_string());     
             // Create a random number between 4196 and 6000 for the token
             let token = crate::crypto::gen_random(512);
@@ -274,13 +274,11 @@ async fn confirm_login(
             .map_err(|_| Error::new("Could not create session".to_string()))?;
 
             Ok(Redirect::temporary(
-                &{
-                    if redirect_url.contains('?') {
-                        format!("{}&token={}.{}", redirect_url, user.id, token)
-                    } else {
-                        format!("{}?token={}.{}", redirect_url, user.id, token)
-                    }
-                }
+                &format!(
+                    "{}?token={}",
+                    url,
+                    token
+                )
             ).into_response())
         }
     }
@@ -871,7 +869,7 @@ async fn submit_onboarding(
     crate::config::CONFIG.channels.onboarding_channel.say(
         &app_state.cache_http,
         format!(
-            "User <@{}> has submitted their onboarding quiz. Please see {}/admin/onboard/resp?id={} to review it, then use the ``/admin approve/deny`` commands to approve or deny it.", 
+            "User <@{}> has submitted their onboarding quiz. Please see {}/admin/onboard/resp/{} to review it, then use the ``/admin approve/deny`` commands to approve or deny it.", 
             submit_onboarding_req.user_id,
             crate::config::CONFIG.frontend_url,
             id

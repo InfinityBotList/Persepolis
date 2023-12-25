@@ -15,7 +15,7 @@ pub async fn staffguide(ctx: Context<'_>) -> Result<(), Error> {
 
     ctx.say(
         format!(
-            "The staff guide can be found at {url}/onboarding/guide?id={id}.
+            "The staff guide can be found at {url}/onboarding/guide/{id}.
 
 Once that you've read the staff guide through, start testing the bot, then approve/deny it using ``{prefix}approve`` or ``{prefix}deny``
 ",
