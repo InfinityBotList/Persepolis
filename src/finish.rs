@@ -1,4 +1,3 @@
-use poise::serenity_prelude::UserId;
 use sqlx::{PgPool, types::uuid};
 
 use crate::Error;
@@ -6,7 +5,7 @@ use crate::Error;
 pub async fn check_code(
     pool: &PgPool,
     onboarding_id: &str,
-    user_id: UserId,
+    user_id: &str,
     inputted_code: &str,
 ) -> Result<bool, Error> {
     let inputted_code = inputted_code.replace(' ', "");

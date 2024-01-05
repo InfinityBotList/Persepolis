@@ -60,7 +60,7 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
         .route("/onboarding-code", post(get_onboarding_code))
         .route("/quiz", post(create_quiz))
         .route("/onboarding-response", post(get_onboard_response))
-        //.route("/submit", post(submit_onboarding))
+        .route("/submit-quiz", post(submit_onboarding))
         .with_state(shared_state)
         .layer(
             CorsLayer::new()
@@ -363,7 +363,8 @@ struct OnboardResponse {
     questions: Option<Vec<Question>>,
     answers: Option<HashMap<String, String>>,
     verdict: Option<Verdict>,
-    meta: Option<OnboardingMeta>,
+    created_at: i64,
+    finished_at: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, TS)]
@@ -397,7 +398,7 @@ async fn get_onboard_response(
         .map_err(|_| Error::new("Invalid id".to_string()))?;
 
     let resp = sqlx::query!(
-        "SELECT verdict, questions, answers, meta, user_id FROM staff_onboardings WHERE id = $1",
+        "SELECT verdict, questions, answers, created_at, finished_at, user_id FROM staff_onboardings WHERE id = $1",
         uuid
     )
     .fetch_one(&app_state.pool)
@@ -425,19 +426,13 @@ async fn get_onboard_response(
         None
     };
 
-    let meta = if let Some(meta) = resp.meta {
-        Some(serde_json::from_value::<OnboardingMeta>(meta)
-            .map_err(|_| Error::new("Could not parse meta".to_string()))?)
-    } else {
-        None
-    };
-
     Ok(Json(OnboardResponse {
         user_id: resp.user_id,
         questions,
         answers,
         verdict,
-        meta,
+        created_at: resp.created_at.timestamp(),
+        finished_at: resp.finished_at.map(|t| t.timestamp()),
     }))
 }
 
@@ -621,66 +616,50 @@ async fn create_quiz(
 
 #[derive(Deserialize)]
 struct SubmitOnboarding {
-    code: String,
-    user_id: String,
+    login_token: String,
+    id: String,
     quiz_answers: HashMap<String, String>,
     sv_code: String,
 }
-
-#[derive(Serialize, Deserialize, Clone, TS)]
-#[ts(export, export_to = ".generated/OnboardingMeta.ts")]
-pub struct OnboardingMeta {
-    pub start_time: i64,
-    pub end_time: i64,
-}
-
-/* TODO: Rewrite this with redis
 
 #[axum_macros::debug_handler]
 async fn submit_onboarding(
     State(app_state): State<Arc<AppState>>,
     Json(submit_onboarding_req): Json<SubmitOnboarding>,
-) -> Result<ServerResponse, ServerError> {
+) -> Result<impl IntoResponse, Error> {
+    let auth_data = super::auth::check_auth(
+        &app_state.pool,
+        &submit_onboarding_req.login_token,
+    )
+    .await
+    .map_err(Error::new)?;
+
+    let o_id = uuid::Uuid::from_str(&submit_onboarding_req.id)
+        .map_err(|_| Error::new("Invalid id".to_string()))?;
+
+
     let rec = sqlx::query!(
-        "SELECT banned, staff_onboard_state, staff_onboard_last_start_time, staff_onboard_guild, staff_onboard_current_onboard_resp_id FROM users WHERE user_id = $1 AND api_token = $2",
-        submit_onboarding_req.user_id,
-        submit_onboarding_req.token
+        "SELECT state, guild_id, questions FROM staff_onboardings WHERE id = $1 AND user_id = $2 AND void = false",
+        o_id,
+        auth_data.user_id
     )
     .fetch_one(&app_state.pool)
     .await
-    .map_err(|_| Error::new("Invalid user/token combination? Consider logging out and logging in again?".to_string()))?;
+    .map_err(|_| Error::new("Could not find onboarding response".to_string()))?;
+    
 
-    if rec.banned {
-        return Err(Error::new(
-            "You are banned from Infinity Bot List".to_string(),
-        ));
-    }
-
-    if rec.staff_onboard_state != crate::states::OnboardState::InQuiz.to_string() {
+    if rec.state != crate::states::OnboardState::InQuiz.to_string() {
         return Err(Error::new(
             "Paradise Protection Protocol is not enabled right now".to_string(),
         ));
     }
 
-    let id = rec
-        .staff_onboard_current_onboard_resp_id
-        .ok_or(Error::new(
-            "Could not find onboard_resp_id".to_string(),
-        ))?;
-
     // Check onboard_resp with corresponding resp id
-    let resp = sqlx::query!(
-        "SELECT questions FROM onboard_data WHERE onboard_code = $1",
-        id
-    )
-    .fetch_one(&app_state.pool)
-    .await
-    .map_err(|_| {
-        Error::new("Fatal error: Could not find onboarding response".to_string())
-    })?;
+    let questions = rec
+    .questions
+    .unwrap_or(json!({}));
 
-    let quiz_ver = resp
-        .questions
+    let quiz_ver = questions
         .get("quiz_ver")
         .unwrap_or(&json!(0))
         .as_i64()
@@ -689,9 +668,9 @@ async fn submit_onboarding(
     if quiz_ver != 1 {
         // Corrupt data, reset questions and error
         sqlx::query!(
-            "UPDATE onboard_data SET questions = $1 WHERE onboard_code = $2",
+            "UPDATE staff_onboardings SET questions = $1 WHERE id = $2",
             json!({}),
-            &id
+            o_id,
         )
         .execute(&app_state.pool)
         .await
@@ -703,26 +682,22 @@ async fn submit_onboarding(
         ));
     }
 
-    let user_id_snow = submit_onboarding_req
-        .user_id
-        .parse::<UserId>()
-        .map_err(|_| Error::new("Invalid user id".to_string()))?;
-
     if !crate::finish::check_code(
         &app_state.pool,
-        user_id_snow,
+        o_id.hyphenated().to_string().as_str(),
+        &auth_data.user_id,
         &submit_onboarding_req.sv_code,
     )
     .await
     .map_err(|e| Error::new(e.to_string()))?
     {
         // Incorrect code
-        return Err(Error::new("Incorrect code".to_string()));
+        return Err(Error::new("Incorrect staff verification code".to_string()));
     }
 
     // Next parse the questions in DB
     let obj = json!([]);
-    let quiz_qvals = resp.questions.get("questions").unwrap_or(&obj).as_array();
+    let quiz_qvals = questions.get("questions").unwrap_or(&obj).as_array();
 
     let mut questions = vec![];
 
@@ -771,61 +746,30 @@ async fn submit_onboarding(
         }
     }
 
-    // Now we can save the answers
-    let mut tx = app_state
-        .pool
-        .begin()
-        .await
-        .map_err(|_| Error::new("Could not start transaction".to_string()))?;
-
     sqlx::query!(
-        "UPDATE onboard_data SET questions = $1, answers = $2, meta = $3 WHERE onboard_code = $4",
+        "UPDATE staff_onboardings SET questions = $1, answers = $2, state = $3 WHERE id = $4",
         serde_json::to_value(questions).map_err(|_| {
             Error::new("Fatal error: Could not serialize questions".to_string())
         })?,
         serde_json::to_value(submit_onboarding_req.quiz_answers)
             .map_err(|_| Error::new("Could not serialize answers".to_string()))?,
-        serde_json::to_value(OnboardingMeta {
-            start_time: rec
-                .staff_onboard_last_start_time
-                .ok_or(Error::new(
-                    "Could not find last start time".to_string()
-                ))?
-                .timestamp(),
-            end_time: Utc::now().timestamp()
-        })
-        .map_err(|_| Error::new("Could not serialize meta".to_string()))?,
-        &id
+        crate::states::OnboardState::PendingManagerReview.to_string(),
+        o_id
     )
-    .execute(&mut tx)
+    .execute(&app_state.pool)
     .await
     .map_err(|_| Error::new("Could not save answers".to_string()))?;
-
-    // Set state to PendingManagerReview
-    sqlx::query!(
-        "UPDATE users SET staff_onboard_state = $1 WHERE user_id = $2",
-        crate::states::OnboardState::PendingManagerReview.to_string(),
-        submit_onboarding_req.user_id
-    )
-    .execute(&mut tx)
-    .await
-    .map_err(|_| Error::new("Could not update state".to_string()))?;
 
     // Send message on discord
     crate::config::CONFIG.channels.onboarding_channel.say(
         &app_state.cache_http,
         format!(
             "User <@{}> has submitted their onboarding quiz. Please see {}/admin/onboard/resp/{} to review it, then use the ``/admin approve/deny`` commands to approve or deny it.", 
-            submit_onboarding_req.user_id,
+            auth_data.user_id,
             crate::config::CONFIG.frontend_url,
-            id
+            o_id
         )
     ).await.map_err(|_| Error::new("Could not send message on discord".to_string()))?;
 
-    tx.commit()
-        .await
-        .map_err(|_| Error::new("Could not commit transaction".to_string()))?;
-
-    Ok(ServerResponse::NoContent)
+    Ok((StatusCode::NO_CONTENT).into_response())
 }
-*/
