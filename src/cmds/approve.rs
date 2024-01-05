@@ -118,9 +118,9 @@ Oh well, good luck with the quiz: {}/onboarding/quiz
             "
 *Paradise Protection Protocol activated*
 
-Visit {}/admin/onboard/quiz to take the quiz!
+Visit {}/onboarding/quiz to take the quiz!
                 ",
-            crate::config::CONFIG.frontend_url
+            crate::config::CONFIG.panel_url
         )
         .into()),
         _ => Err("Hmm... seems like you can't use this command yet!".into()), // TODO, remove
