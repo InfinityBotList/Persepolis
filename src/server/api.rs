@@ -441,10 +441,11 @@ async fn get_onboard_response(
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = ".generated/CreateQuizRequest.ts")] 
 struct CreateQuizRequest {
-    onboarding_id: String,
     login_token: String,
+    id: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, TS)]
@@ -474,7 +475,7 @@ async fn create_quiz(
     .await
     .map_err(Error::new)?;
 
-    let o_id = uuid::Uuid::from_str(&create_quiz_req.onboarding_id)
+    let o_id = uuid::Uuid::from_str(&create_quiz_req.id)
         .map_err(|_| Error::new("Invalid id".to_string()))?;
 
     let rec = sqlx::query!(

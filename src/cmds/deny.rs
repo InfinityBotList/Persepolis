@@ -96,9 +96,10 @@ pub async fn deny(ctx: Context<'_>, member: Member, reason: String) -> Result<()
                 "
 *Paradise Protection Protocol activated, deploying defenses!!!*
 
-Oh well, good luck with the quiz: {}/onboarding/quiz
+Oh well, good luck with the quiz: {}/onboarding/quiz/{}
                 ",
-                crate::config::CONFIG.panel_url
+                crate::config::CONFIG.panel_url,
+                onboarding_id
             ))
             .await?;
 
@@ -108,9 +109,10 @@ Oh well, good luck with the quiz: {}/onboarding/quiz
             "
 *Paradise Protection Protocol activated*
 
-Visit {}/onboarding/quiz to take the quiz!
+Visit {}/onboarding/quiz/{} to take the quiz!
                 ",
-            crate::config::CONFIG.panel_url
+            crate::config::CONFIG.panel_url,
+            onboarding_id
         )
         .into()),
         _ => Err("Hmm... seems like you can't use this command yet!".into()), // TODO, remove
