@@ -10,7 +10,7 @@ use axum::{
 };
 use log::info;
 use poise::serenity_prelude::{AddMember, GuildId, UserId};
-use rand::Rng;
+use rand::{Rng, seq::SliceRandom};
 use serde::{Deserialize, Serialize};
 use serenity::{all::ChannelId, json::json};
 use sqlx::{PgPool, types::uuid};
@@ -210,7 +210,7 @@ async fn confirm_login(
         
             let guild_id = guild_id.guild_id.parse::<GuildId>().map_err(|e| {
                 Error::new(
-                    &format!("Could not parse guild id {}", e)
+                    format!("Could not parse guild id {}", e)
                 )
             })?;
             let channel_id = setup_readme(&app_state.cache_http, guild_id)
@@ -246,7 +246,7 @@ async fn confirm_login(
                     .await
                     .map_err(|err| {
                         Error::new(
-                            &format!("Could not add user to guild: {}", err)
+                            format!("Could not add user to guild: {}", err)
                         )
                     })?;
         
@@ -348,75 +348,6 @@ async fn get_onboarding_code(
     Ok(code.into_response())
 }
 
-/*
-#[axum_macros::debug_handler]
-async fn get_onboarding_code(
-    State(app_state): State<Arc<AppState>>,
-    Json(get_onboarding_code_req): Json<GetOnboardingCode>,
-) -> Result<Json<OnboardingCode>, ServerError> {
-    let rec = sqlx::query!(
-        "SELECT ",
-        get_onboarding_code_req.user_id,
-        get_onboarding_code_req.token
-    )
-    .fetch_one(&app_state.pool)
-    .await
-    .map_err(|_| Error::new("Invalid user/token combination? Consider logging out and logging in again?".to_string()))?;
-
-    let onboard_code = crate::crypto::gen_random(76); // Generate 76 character random string for onboard code
-
-    // Set onboard code for user
-    sqlx::query!(
-        "UPDATE staff_onboardings SET staff_verify_code = $1 WHERE id = $2 AND user_id = $3",
-        onboard_code,
-        onboarding_id,
-        ctx.author().id.to_string()
-    )
-    .execute(&ctx.data().pool)
-    .await?;    
-
-    let id = rec
-        .staff_onboard_current_onboard_resp_id
-        .ok_or(Error::new(
-            "Could not find onboard_resp_id".to_string(),
-        ))?;
-
-    // Check onboard_resp with corresponding resp id
-    let resp = sqlx::query!(
-        "SELECT questions FROM onboard_data WHERE onboard_code = $1",
-        id
-    )
-    .fetch_one(&app_state.pool)
-    .await
-    .map_err(|_| {
-        Error::new("Fatal error: Could not find onboarding response".to_string())
-    })?;
-
-    let quiz_ver = resp
-        .questions
-        .get("quiz_ver")
-        .unwrap_or(&json!(0))
-        .as_i64()
-        .unwrap_or(0);
-
-    if quiz_ver != 1 {
-        // Corrupt data, reset questions and error
-        sqlx::query!(
-            "UPDATE onboard_data SET questions = $1 WHERE onboard_code = $2",
-            json!({}),
-            &id
-        )
-        .execute(&app_state.pool)
-        .await
-        .map_err(|_| Error::new("Could not reset questions".to_string()))?;
-
-        return Err(Error::new(
-            "Quiz could not be found and hence has been reset, reload the page and try again"
-                .to_string(),
-        ));
-    }
-}*/
-
 #[derive(Serialize, Deserialize, Clone, TS)]
 #[ts(export, export_to = ".generated/Verdict.ts")]
 pub struct Verdict {
@@ -435,13 +366,39 @@ struct OnboardResponse {
     meta: Option<OnboardingMeta>,
 }
 
+#[derive(Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = ".generated/GetOnboardingResponse.ts")]
+struct GetOnboardingResponse {
+    login_token: String,
+    id: String,
+}
+
 async fn get_onboard_response(
     State(app_state): State<Arc<AppState>>,
-    Path(rid): Path<String>,
+    Json(req): Json<GetOnboardingResponse>,
 ) -> Result<Json<OnboardResponse>, Error> {
+    let auth_data = super::auth::check_auth(
+        &app_state.pool,
+        &req.login_token,
+    )
+    .await
+    .map_err(Error::new)?;
+
+    let user_perms = crate::perms::get_user_perms(&app_state.pool, &auth_data.user_id)
+        .await
+        .map_err(|_| Error::new("Could not get user perms".to_string()))?
+        .resolve();
+
+    if !kittycat::perms::has_perm(&user_perms, &kittycat::perms::build("persepolis", "view_onboarding_responses")) {
+        return Err(Error::new("You do not have permission to view onboarding responses".to_string()));
+    }
+
+    let uuid = uuid::Uuid::from_str(&req.id)
+        .map_err(|_| Error::new("Invalid id".to_string()))?;
+
     let resp = sqlx::query!(
-        "SELECT verdict, questions, answers, meta, user_id FROM staff_onboardings WHERE id::text = $1",
-        rid.to_string()
+        "SELECT verdict, questions, answers, meta, user_id FROM staff_onboardings WHERE id = $1",
+        uuid
     )
     .fetch_one(&app_state.pool)
     .await
@@ -486,8 +443,8 @@ async fn get_onboard_response(
 
 #[derive(Deserialize)]
 struct CreateQuizRequest {
-    id: String,
-    user_id: String,
+    onboarding_id: String,
+    login_token: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, TS)]
@@ -505,47 +462,41 @@ struct CreateQuizResponse {
     cached: bool,
 }
 
-/* TODO: Rewrite this with redis
-
 #[axum_macros::debug_handler]
 async fn create_quiz(
     State(app_state): State<Arc<AppState>>,
     Json(create_quiz_req): Json<CreateQuizRequest>,
-) -> Result<Json<CreateQuizResponse>, ServerError> {
+) -> Result<Json<CreateQuizResponse>, Error> {
+    let auth_data = super::auth::check_auth(
+        &app_state.pool,
+        &create_quiz_req.login_token,
+    )
+    .await
+    .map_err(Error::new)?;
+
+    let o_id = uuid::Uuid::from_str(&create_quiz_req.onboarding_id)
+        .map_err(|_| Error::new("Invalid id".to_string()))?;
+
     let rec = sqlx::query!(
-        "SELECT banned, staff_onboard_state, staff_onboard_current_onboard_resp_id FROM users WHERE user_id = $1 AND api_token = $2",
-        create_quiz_req.user_id,
-        create_quiz_req.token
+        "SELECT state, guild_id, questions FROM staff_onboardings WHERE id = $1 AND user_id = $2 AND void = false",
+        o_id,
+        auth_data.user_id
     )
     .fetch_one(&app_state.pool)
     .await
-    .map_err(|_| Error::new("Invalid user/token combination? Consider logging out and logging in again?".to_string()))?;
+    .map_err(|_| Error::new("Could not find onboarding response".to_string()))?;
 
-    if rec.banned {
-        return Err(Error::new(
-            "You are banned from Infinity Bot List".to_string(),
-        ));
-    }
-
-    if rec.staff_onboard_state != crate::states::OnboardState::InQuiz.to_string() {
+    if rec.state != crate::states::OnboardState::InQuiz.to_string() {
         return Err(Error::new(
             "Paradise Protection Protocol is not enabled right now".to_string(),
         ));
     }
 
-    // Check onboard_resp with corresponding resp id
-    let resp = sqlx::query!(
-        "SELECT questions FROM onboard_data WHERE onboard_code = $1",
-        rec.staff_onboard_current_onboard_resp_id
-    )
-    .fetch_one(&app_state.pool)
-    .await
-    .map_err(|_| {
-        Error::new("Fatal error: Could not find onboarding response".to_string())
-    })?;
+    let questions = rec
+    .questions
+    .unwrap_or(json!({}));
 
-    let quiz_ver = resp
-        .questions
+    let quiz_ver = questions
         .get("quiz_ver")
         .unwrap_or(&json!(0))
         .as_i64()
@@ -553,7 +504,7 @@ async fn create_quiz(
 
     if quiz_ver == 1 {
         let obj = json!([]);
-        let quiz_qvals = resp.questions.get("questions").unwrap_or(&obj).as_array();
+        let quiz_qvals = questions.get("questions").unwrap_or(&obj).as_array();
 
         if let Some(question_vals) = quiz_qvals {
             let mut questions = vec![];
@@ -643,16 +594,10 @@ async fn create_quiz(
         "cache_nonce": crate::crypto::gen_random(12)
     });
 
-    let id = rec
-        .staff_onboard_current_onboard_resp_id
-        .ok_or(Error::new(
-            "Could not find onboard_resp_id".to_string(),
-        ))?;
-
     sqlx::query!(
-        "UPDATE onboard_data SET questions = $1 WHERE onboard_code = $2",
+        "UPDATE staff_onboardings SET questions = $1 WHERE id = $2",
         quiz,
-        &id
+        o_id
     )
     .execute(&app_state.pool)
     .await
@@ -671,7 +616,7 @@ async fn create_quiz(
             .collect::<Vec<PublicQuestion>>(),
         cached: false,
     }))
-} */
+}
 
 #[derive(Deserialize)]
 struct SubmitOnboarding {

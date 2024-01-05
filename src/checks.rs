@@ -62,7 +62,7 @@ pub async fn is_onboardable(ctx: Context<'_>) -> Result<bool, Error> {
 pub async fn setup_onboarding(ctx: Context<'_>) -> Result<bool, Error> {
     // Check f: sqlx::Transaction<'_, sqlx::Postgres>or an existing onboarding session
     let state = sqlx::query!(
-        "SELECT state, created_at, guild_id FROM staff_onboardings WHERE user_id = $1 AND NOW() - created_at < INTERVAL '3 months' ORDER BY created_at DESC LIMIT 1",
+        "SELECT state, created_at, guild_id FROM staff_onboardings WHERE user_id = $1 AND void = false AND NOW() - created_at < INTERVAL '3 months' ORDER BY created_at DESC LIMIT 1",
         ctx.author().id.to_string()
     )
     .fetch_optional(&ctx.data().pool)
