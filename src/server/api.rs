@@ -58,8 +58,8 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
         .route("/confirm-login", get(confirm_login))
         .route("/auth-data", post(get_auth_data))
         .route("/onboarding-code", post(get_onboarding_code))
-        //.route("/quiz", post(create_quiz))
-        .route("/resp/:rid", get(get_onboard_response))
+        .route("/quiz", post(create_quiz))
+        .route("/onboarding-response", post(get_onboard_response))
         //.route("/submit", post(submit_onboarding))
         .with_state(shared_state)
         .layer(
