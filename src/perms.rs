@@ -9,12 +9,12 @@ pub async fn get_user_perms(pool: &PgPool, user_id: &str) -> Result<StaffPermiss
     let rec = sqlx::query!("SELECT positions, perm_overrides FROM staff_members WHERE user_id = $1", user_id)
         .fetch_one(pool)
         .await
-        .map_err(|e| format!("Error while getting staff perms of user {}: {}", user_id, e))?;
+        .map_err(|e| format!("Error while getting staff perms of user {} [staff_members]: {}", user_id, e))?;
 
     let pos = sqlx::query!("SELECT id, index, perms FROM staff_positions WHERE id = ANY($1)", &rec.positions)
         .fetch_all(pool)
         .await
-        .map_err(|e| format!("Error while getting staff perms of user {}: {}", user_id, e))?;
+        .map_err(|e| format!("Error while getting staff perms of user {} [staff_positions]: {}", user_id, e))?;
 
     Ok(StaffPermissions {
         user_positions: pos.iter().map(|p| PartialStaffPosition {

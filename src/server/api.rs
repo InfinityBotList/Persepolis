@@ -181,9 +181,9 @@ async fn confirm_login(
         ConfirmLoginState::JoinOnboardingServer(uid) => {
             if user.id != uid {
                 // Check if admin
-                let perms = crate::perms::get_user_perms(&app_state.pool, &uid.to_string())
+                let perms = crate::perms::get_user_perms(&app_state.pool, &user.id.to_string())
                     .await
-                    .map_err(|_| Error::new("Could not get user perms"))?
+                    .map_err(|e| Error::new(format!("Could not get user perms: {}", e)))?
                     .resolve();
         
                 if !kittycat::perms::has_perm(&perms, &kittycat::perms::build("persepolis", "join_onboarding_servers")) {
@@ -387,7 +387,7 @@ async fn get_onboard_response(
 
     let user_perms = crate::perms::get_user_perms(&app_state.pool, &auth_data.user_id)
         .await
-        .map_err(|_| Error::new("Could not get user perms".to_string()))?
+        .map_err(|e| Error::new(format!("Could not get user perms: {}", e)))?
         .resolve();
 
     if !kittycat::perms::has_perm(&user_perms, &kittycat::perms::build("persepolis", "view_onboarding_responses")) {
