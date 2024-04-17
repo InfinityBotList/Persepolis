@@ -56,7 +56,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                 .title("Bot Already Claimed")
                 .description(format!(
                     "This bot is already claimed by {}",
-                    data.cache_http.cache.current_user().id.mention()
+                    ctx.cache().current_user().id.mention()
                 ))
                 .color(0xFF0000)
             )
@@ -86,7 +86,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
             ctx.say("When reviewing, it is STRONGLY recommended (and a good practice) to **remind the reviewer first before force claiming a bot they have claimed**. So, lets do that :smirk:").await?;
 
             let interaction = msg
-            .await_component_interaction(ctx.serenity_context())
+            .await_component_interaction(ctx.serenity_context().shard.clone())
             .author_id(ctx.author().id)
             .await;
 
@@ -102,7 +102,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                 ctx.say(
                     format!(
                         "<@{claimed_by}>, did you forgot to finish testing <@{bot_id}>? This reminder has been recorded internally for staff activity tracking purposes!",
-                        claimed_by = data.cache_http.cache.current_user().id,
+                        claimed_by = ctx.cache().current_user().id,
                         bot_id = crate::config::CONFIG.test_bot
                     )
                 ).await?;
@@ -111,11 +111,12 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                 let wh = ctx
                     .channel_id()
                     .create_webhook(
-                        &ctx.serenity_context(),
+                        &ctx.serenity_context().http,
                         CreateWebhook::new("Splashtail").avatar(
                             &CreateAttachment::url(
-                                &ctx.serenity_context(),
+                                &ctx.serenity_context().http,
                                 "https://cdn.infinitybots.gg/staff/staff/onboarding-v4.webp",
+                                "onboarding-v4.webp"
                             )
                             .await?,
                         ),
@@ -124,15 +125,19 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
 
                 tokio::time::sleep(Duration::from_secs(3)).await;
 
-                let bot_name = {
-                    data.cache_http.cache.user(crate::config::CONFIG.test_bot)
-                    .ok_or("Bot not found")?
-                    .name
-                    .clone()
-                };
+                let member = botox::cache::member_on_guild(
+                    &ctx,
+                    crate::config::CONFIG.servers.staff,
+                    crate::config::CONFIG.test_bot,
+                    false
+                )
+                .await?
+                .ok_or("Bot not found")?;
+
+                let bot_name = member.user.name;
 
                 wh.execute(
-                    &ctx.serenity_context(),
+                    &ctx.serenity_context().http,
                     true,
                     ExecuteWebhook::default()
                     .content(
@@ -178,7 +183,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
                 .title("Bot Already Claimed")
                 .description(format!(
                     "This bot is already claimed by {}",
-                    data.cache_http.cache.current_user().id.mention()
+                    ctx.cache().current_user().id.mention()
                 ))
                 .color(0xFF0000)
             )
@@ -206,7 +211,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
             .await?;
 
             let interaction = msg
-            .await_component_interaction(ctx.serenity_context())
+            .await_component_interaction(ctx.serenity_context().shard.clone())
             .author_id(ctx.author().id)
             .await;
 

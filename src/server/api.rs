@@ -1,7 +1,7 @@
-use std::{collections::HashMap, sync::Arc, str::FromStr, fmt::{Display, Formatter}};
+use std::{collections::HashMap, sync::Arc, str::FromStr, fmt::Display};
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Redirect, Response},
     routing::get,
@@ -9,16 +9,17 @@ use axum::{
     Json, Router,
 };
 use log::info;
-use poise::serenity_prelude::{AddMember, GuildId, UserId};
-use rand::{Rng, seq::SliceRandom};
+use poise::serenity_prelude::{AddMember, GuildId};
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
-use serenity::{all::ChannelId, json::json};
+use serde_json::json;
 use sqlx::{PgPool, types::uuid};
 use tower_http::cors::{Any, CorsLayer};
 use ts_rs::TS;
 
+use botox::cache::{member_on_guild, CacheHttpImpl};
+
 use crate::{
-    cache::CacheHttpImpl,
     config::{self, Question, QuestionData},
     setup::{get_onboard_user_role, setup_readme},
 };
@@ -158,10 +159,14 @@ async fn confirm_login(
         if row.is_some() && !row.unwrap().positions.is_empty() {
             true
         } else {
-            let member = app_state
-                .cache_http
-                .cache
-                .member(config::CONFIG.servers.main, user.id);
+            let member = member_on_guild(
+                &app_state.cache_http,
+                config::CONFIG.servers.main,
+                user.id,
+                false
+            )
+            .await
+            .map_err(|e| Error::new(format!("Failed to fetch member: {:#?}", e)))?;
 
             if let Some(member) = member {
                 member
@@ -220,12 +225,15 @@ async fn confirm_login(
             let guild_url = format!("https://discord.com/channels/{}/{}", guild_id, channel_id);
         
             // Check that theyre not already on the server
-            if app_state
-                .cache_http
-                .cache
-                .member(guild_id, user.id)
-                .is_some()
-            {
+            if member_on_guild(
+                &app_state.cache_http,
+                config::CONFIG.servers.main,
+                user.id,
+                false
+            )
+            .await
+            .map_err(|e| Error::new(format!("Failed to fetch member: {:#?}", e)))?
+            .is_some() {
                 Ok(Redirect::temporary(&guild_url).into_response())
             } else {
                 // Add them to server first
@@ -260,13 +268,13 @@ async fn confirm_login(
      
             info!("Creating session for {}", user.id.to_string());     
             // Create a random number between 4196 and 6000 for the token
-            let token = crate::crypto::gen_random(512);
+            let token = botox::crypto::gen_random(512);
 
             sqlx::query!(
                 "INSERT INTO staffpanel__authchain (user_id, token, popplio_token, state) VALUES ($1, $2, $3, $4)",
                 user.id.to_string(),
                 token,
-                crate::crypto::gen_random(2048),
+                botox::crypto::gen_random(2048),
                 "persepolis.active"
             )
             .execute(&app_state.pool)
@@ -325,7 +333,7 @@ async fn get_onboarding_code(
         code
     } else {
         // Generate 76 character random string for onboard code
-        let onboard_code = crate::crypto::gen_random(76);
+        let onboard_code = botox::crypto::gen_random(76);
 
         // Set onboard code for user
         sqlx::query!(
@@ -587,7 +595,7 @@ async fn create_quiz(
     let quiz = json!({
         "questions": final_questions,
         "quiz_ver": 1,
-        "cache_nonce": crate::crypto::gen_random(12)
+        "cache_nonce": botox::crypto::gen_random(12)
     });
 
     sqlx::query!(

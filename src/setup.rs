@@ -1,9 +1,10 @@
-use crate::{cache::CacheHttpImpl, crypto::gen_random, Context, Error, server::types::login::ConfirmLoginState};
+use crate::{Context, Error, server::types::login::ConfirmLoginState};
 use poise::serenity_prelude::{
     ChannelId, CreateActionRow, CreateButton, CreateChannel, CreateEmbed, EditMessage, EditRole,
     GuildId, Mentionable, Message, Permissions, RoleId,
 };
-use serenity::json::json;
+use botox::{cache::CacheHttpImpl, crypto::gen_random};
+use serde_json::json;
 use sqlx::types::uuid;
 
 /// Returns the onboarding id given a context
@@ -103,12 +104,18 @@ pub async fn setup_readme(cache_http: &CacheHttpImpl, guild: GuildId) -> Result<
             .guild(guild)
             .ok_or("Could not find the guild!")?;
 
-        if let Some(chan) = guild_cache.channels.values().find(|c| c.name == "readme") {
-            readme_channel = Some(chan.id);
+        for channel in guild_cache.channels.iter() {
+            if channel.name == "readme" {
+                readme_channel = Some(channel.id);
+                break;
+            }
         }
 
-        if let Some(chan) = guild_cache.channels.values().find(|c| c.name == "general") {
-            general_channel = Some(chan.id);
+        for channel in guild_cache.channels.iter() {
+            if channel.name == "general" {
+                general_channel = Some(channel.id);
+                break;
+            }
         }
     }
 
@@ -167,12 +174,11 @@ pub async fn get_onboard_user_role(
             .guild(guild)
             .ok_or("Could not find the guild!")?;
 
-        if let Some(r) = guild_cache
-            .roles
-            .values()
-            .find(|c| c.name == "onboard-user")
-        {
-            admin_role = Some(r.id);
+        for role in guild_cache.roles.iter() {
+            if role.name == "onboard-user" {
+                admin_role = Some(role.id);
+                break;
+            }
         }
     }
 
@@ -181,7 +187,7 @@ pub async fn get_onboard_user_role(
     } else {
         let new_role = guild
             .create_role(
-                cache_http,
+                &cache_http.http,
                 EditRole::new()
                     .name("onboard-user")
                     .permissions(Permissions::all()),
@@ -194,19 +200,24 @@ pub async fn get_onboard_user_role(
 
 /// Either deletes or leaves the guild
 pub async fn delete_or_leave_guild(
-    cache_http: &CacheHttpImpl,
+    cache_http: impl serenity::all::CacheHttp,
     guild: GuildId,
 ) -> Result<(), Error> {
     // Since Guild is not Send, it needs to be block-scoped explicitly
     let mut is_owner = false;
     let mut is_in_guild = false;
 
+    let Some(cache) = cache_http.cache() else {
+        return Err("Cache not found!".into())
+    };
+    let http = cache_http.http();
+
     {
-        let guild = cache_http.cache.guild(guild);
+        let guild = cache.guild(guild);
 
         if let Some(guild) = guild {
             is_in_guild = true;
-            is_owner = guild.owner_id == cache_http.cache.current_user().id;
+            is_owner = guild.owner_id == cache.current_user().id;
         }
     }
 
@@ -217,10 +228,10 @@ pub async fn delete_or_leave_guild(
 
     if is_owner {
         // Owner, so delete
-        cache_http.http.delete_guild(guild).await?;
+        http.delete_guild(guild).await?;
     } else {
         // We're not owner, so we need to leave
-        cache_http.http.leave_guild(guild).await?;
+        http.leave_guild(guild).await?;
     }
 
     Ok(())

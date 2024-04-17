@@ -1,15 +1,15 @@
+use std::sync::Arc;
+
 use log::{error, info};
 use poise::serenity_prelude::{GuildId, FullEvent};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
-use crate::cache::CacheHttpImpl;
+use botox::cache::CacheHttpImpl;
 
 mod admin;
-mod cache;
 mod checks;
 mod cmds;
 mod config;
-mod crypto;
 mod finish;
 mod help;
 mod server;
@@ -24,7 +24,6 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 // User data, which is stored and accessible in all command invocations
 pub struct Data {
     pool: sqlx::PgPool,
-    cache_http: cache::CacheHttpImpl,
 }
 
 async fn clean_out(pool: PgPool, cache_http: CacheHttpImpl) -> ! {
@@ -82,7 +81,6 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     // They are many errors that can occur, so we only handle the ones we want to customize
     // and forward the rest to the default handler
     match error {
-        poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
         poise::FrameworkError::Command { error, ctx, ..  } => {
             error!("Error in command `{}`: {:?}", ctx.command().name, error,);
             let err = ctx
@@ -119,7 +117,12 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     }
 }
 
-async fn event_listener(event: &FullEvent, user_data: &Data) -> Result<(), Error> {
+async fn event_listener<'a>(
+    ctx: poise::FrameworkContext<'a, Data, Error>,
+    event: &FullEvent,
+) -> Result<(), Error> {
+    let user_data = ctx.serenity_context.data::<Data>();
+
     match event {
         FullEvent::InteractionCreate {
             interaction,
@@ -141,14 +144,16 @@ async fn event_listener(event: &FullEvent, user_data: &Data) -> Result<(), Error
             .execute(&user_data.pool)
             .await?;
 
+            let cache_http_server = CacheHttpImpl::from_ctx(ctx.serenity_context);
             tokio::task::spawn(server::api::setup_server(
                 user_data.pool.clone(),
-                user_data.cache_http.clone(),
+                cache_http_server,
             ));
 
+            let cache_http_cleanout = CacheHttpImpl::from_ctx(ctx.serenity_context);
             tokio::task::spawn(clean_out(
                 user_data.pool.clone(),
-                user_data.cache_http.clone(),
+                cache_http_cleanout,
             ));
         }
         _ => {}
@@ -173,7 +178,15 @@ async fn main() {
         .build();
 
     let client_builder =
-        serenity::all::ClientBuilder::new_with_http(http, serenity::all::GatewayIntents::all());
+        serenity::all::ClientBuilder::new_with_http(Arc::new(http), serenity::all::GatewayIntents::all());
+
+    let data = Data {
+        pool: PgPoolOptions::new()
+        .max_connections(MAX_CONNECTIONS)
+        .connect(&config::CONFIG.database_url)
+        .await
+        .expect("Could not initialize connection")
+    };
 
     let framework = poise::Framework::new(
         poise::FrameworkOptions {
@@ -182,7 +195,7 @@ async fn main() {
                 prefix: Some("ibo!".into()),
                 ..poise::PrefixFrameworkOptions::default()
             },
-            event_handler: |_ctx, event, _fc, user_data| Box::pin(event_listener(event, user_data)),
+            event_handler: |ctx, event| Box::pin(event_listener(ctx, event)),
             commands: vec![
                 register(),
                 checks::test_onboardable(),
@@ -224,25 +237,11 @@ async fn main() {
             on_error: |error| Box::pin(on_error(error)),
             ..Default::default()
         },
-        move |ctx, _ready, _framework| {
-            Box::pin(async move {
-                Ok(Data {
-                    cache_http: CacheHttpImpl {
-                        cache: ctx.cache.clone(),
-                        http: ctx.http.clone(),
-                    },
-                    pool: PgPoolOptions::new()
-                        .max_connections(MAX_CONNECTIONS)
-                        .connect(&config::CONFIG.database_url)
-                        .await
-                        .expect("Could not initialize connection"),
-                })
-            })
-        },
     );
 
     let mut client = client_builder
         .framework(framework)
+        .data(Arc::new(data))
         .await
         .expect("Error creating client");
 

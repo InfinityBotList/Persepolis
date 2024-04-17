@@ -30,14 +30,16 @@ pub async fn queue(ctx: Context<'_>) -> Result<(), Error> {
     .state
     .parse::<crate::states::OnboardState>()?;
 
-    let bot_name = {
-        data.cache_http
-            .cache
-            .user(crate::config::CONFIG.test_bot)
-            .ok_or("Bot not found")?
-            .name
-            .clone()
-    };
+    let member = botox::cache::member_on_guild(
+        &ctx,
+        crate::config::CONFIG.servers.staff,
+        crate::config::CONFIG.test_bot,
+        false
+    )
+    .await?
+    .ok_or("Bot not found")?;
+
+    let bot_name = member.user.name;
 
     match onboard_state {
         crate::states::OnboardState::Pending => {
@@ -74,8 +76,8 @@ Since you seem new to this place, how about a nice look arou-?
                             "**Bot:** <@{bot_id}> ({bot_name})\n\n**Owner:** {owner_id} ({owner_name})\n\n**Bot Page:** {frontend_url}/bots/{bot_id}",
                             bot_id = crate::config::CONFIG.test_bot,
                             bot_name = bot_name,
-                            owner_id = data.cache_http.cache.current_user().id.mention(),
-                            owner_name = data.cache_http.cache.current_user().name,
+                            owner_id = ctx.cache().current_user().id.mention(),
+                            owner_name = ctx.cache().current_user().name,
                             frontend_url = crate::config::CONFIG.frontend_url,
                         )
                     )
@@ -117,14 +119,16 @@ Since you seem new to this place, how about a nice look arou-?
         }
         crate::states::OnboardState::Started
         | crate::states::OnboardState::QueueRemindedReviewer => {
-            let bot_name = {
-                data.cache_http
-                    .cache
-                    .user(crate::config::CONFIG.test_bot)
-                    .ok_or("Bot not found")?
-                    .name
-                    .clone()
-            };
+            let member = botox::cache::member_on_guild(
+                &ctx,
+                crate::config::CONFIG.servers.staff,
+                crate::config::CONFIG.test_bot,
+                false
+            )
+            .await?
+            .ok_or("Bot not found")?;
+
+            let bot_name = member.user.name;
 
             let bot_data = sqlx::query!(
                 "SELECT short, invite FROM bots WHERE bot_id = $1",
@@ -172,14 +176,16 @@ Since you seem new to this place, how about a nice look arou-?
             Ok(())
         }
         _ => {
-            let bot_name = {
-                data.cache_http
-                    .cache
-                    .user(crate::config::CONFIG.test_bot)
-                    .ok_or("Bot not found")?
-                    .name
-                    .clone()
-            };
+            let member = botox::cache::member_on_guild(
+                &ctx,
+                crate::config::CONFIG.servers.staff,
+                crate::config::CONFIG.test_bot,
+                false
+            )
+            .await?
+            .ok_or("Bot not found")?;
+
+            let bot_name = member.user.name;
 
             let bot_data = sqlx::query!(
                 "SELECT short, invite FROM bots WHERE bot_id = $1",

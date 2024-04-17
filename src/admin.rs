@@ -1,4 +1,5 @@
 use crate::{checks, Context, Error};
+use botox::{cache::{CacheHttpImpl, member_on_guild}, crypto::gen_random};
 use poise::{
     serenity_prelude::{ButtonStyle, CreateActionRow, CreateButton, CreateMessage, GuildId, User},
     CreateReply,
@@ -31,7 +32,7 @@ pub async fn staff_guildlist(ctx: Context<'_>) -> Result<(), Error> {
 
     for guild in guilds.iter() {
         let name = guild
-            .name(ctx.serenity_context())
+            .name(&ctx.serenity_context().cache)
             .unwrap_or_else(|| "Unknown".to_string())
             + " ("
             + &guild.to_string()
@@ -143,7 +144,7 @@ pub async fn approveonboard(
 
         let guild_id = onboard_state.guild_id.parse::<GuildId>()?;
         
-        crate::setup::delete_or_leave_guild(&data.cache_http, guild_id).await?;        
+        crate::setup::delete_or_leave_guild(&CacheHttpImpl::from_ctx(ctx.serenity_context()), guild_id).await?;        
     } else {
         if !force {
             return Err("User does not have any onboardings pending manager review".into());
@@ -152,7 +153,7 @@ pub async fn approveonboard(
         sqlx::query!(
             "INSERT INTO staff_onboardings (user_id, guild_id, state) VALUES ($1, $2, $3)",
             member.id.to_string(),
-            "force_approved".to_string() + &crate::crypto::gen_random(12),
+            "force_approved".to_string() + &gen_random(12),
             crate::states::OnboardState::Completed.to_string(),
         )
         .execute(&mut *tx)
@@ -162,19 +163,28 @@ pub async fn approveonboard(
     }
 
     // Remove awaiting staff role
-    let main_member = ctx.serenity_context().cache.member(crate::config::CONFIG.servers.main, member.id).ok_or("Could not find member in main server")?.clone();
+    let main_member = member_on_guild(
+        &ctx,
+        crate::config::CONFIG.servers.main,
+        member.id,
+        false
+    )
+    .await?
+    .ok_or("Member not found in main server")?;
 
     if main_member.roles.contains(&crate::config::CONFIG.roles.awaiting_staff) {
         main_member.remove_role(
             &ctx.serenity_context().http,
             crate::config::CONFIG.roles.awaiting_staff,
+            Some("Onboarding completed")
         ).await?;
     }
 
     if !main_member.roles.contains(&crate::config::CONFIG.roles.main_server_web_moderator) {
         main_member.add_role(
             &ctx.serenity_context().http,
-            crate::config::CONFIG.roles.main_server_web_moderator
+            crate::config::CONFIG.roles.main_server_web_moderator,
+            Some("Onboarding completed")
         )
         .await?;
     }
@@ -184,7 +194,7 @@ pub async fn approveonboard(
 
     // DM user that they have been approved
     let _ = member.dm(
-        &ctx.serenity_context(),
+        &ctx.serenity_context().http,
         CreateMessage::new()
         .content(
             format!("Your onboarding request has been approved. You may now begin approving/denying bots
@@ -247,7 +257,7 @@ pub async fn denyonboard(
 
         let guild_id = onboard_state.guild_id.parse::<GuildId>()?;
         
-        crate::setup::delete_or_leave_guild(&data.cache_http, guild_id).await?;        
+        crate::setup::delete_or_leave_guild(&CacheHttpImpl::from_ctx(ctx.serenity_context()), guild_id).await?;        
     } else {
         if !force {
             return Err("User does not have any onboardings pending manager review".into());
@@ -256,7 +266,7 @@ pub async fn denyonboard(
         sqlx::query!(
             "INSERT INTO staff_onboardings (user_id, guild_id, state) VALUES ($1, $2, $3)",
             user.id.to_string(),
-            "force_approved".to_string() + &crate::crypto::gen_random(12),
+            "force_approved".to_string() + &gen_random(12),
             crate::states::OnboardState::Denied.to_string(),
         )
         .execute(&mut *tx)
@@ -304,7 +314,7 @@ pub async fn resetonboard(
     let mut msg = ctx.send(builder.clone()).await?.into_message().await?;
 
     let interaction = msg
-        .await_component_interaction(ctx.serenity_context())
+        .await_component_interaction(ctx.serenity_context().shard.clone())
         .author_id(ctx.author().id)
         .await;
 

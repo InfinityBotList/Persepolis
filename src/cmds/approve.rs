@@ -89,15 +89,14 @@ pub async fn approve(ctx: Context<'_>, member: Member, reason: String) -> Result
             .await?;
 
             // Try kicking the test bot from the server now
-            ctx.guild_id()
-                .ok_or("Failed to get guild")?
-                .kick_with_reason(
-                    &ctx.serenity_context(),
+            ctx.http()
+                .kick_member(
+                    ctx.guild_id().ok_or("Failed to get guild")?,
                     crate::config::CONFIG.test_bot,
-                    "Activated Paradise Protection Protocol",
+                    Some("Activated Paradise Protection Protocol"),
                 )
                 .await?;
-
+        
             ctx.say("Oh great work in approving this bo-!").await?;
 
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;

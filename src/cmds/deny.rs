@@ -64,6 +64,16 @@ pub async fn deny(ctx: Context<'_>, member: Member, reason: String) -> Result<()
                 return Ok(());
             }
 
+            /*
+            if !crate::finish::check_code(&data.pool, ctx.author().id, code).await? {
+                qm.interaction.create_response(&ctx.serenity_context(), CreateInteractionResponse::Message(
+                    CreateInteractionResponseMessage::default()
+                    .content("Whoa there! You inputted the wrong verification code (hint: ``/staffguide`` or ``ibb!staffguide``)")
+                )).await?;
+
+                return Ok(());
+            } */
+
             sqlx::query!(
                 "UPDATE staff_onboardings SET state = $1, verdict = $2 WHERE user_id = $3 AND id = $4",
                 crate::states::OnboardState::InQuiz.to_string(),
@@ -79,15 +89,14 @@ pub async fn deny(ctx: Context<'_>, member: Member, reason: String) -> Result<()
             .await?;
 
             // Try kicking the test bot from the server now
-            ctx.guild_id()
-                .ok_or("Failed to get guild")?
-                .kick_with_reason(
-                    &ctx.serenity_context(),
+            ctx.http()
+                .kick_member(
+                    ctx.guild_id().ok_or("Failed to get guild")?,
                     crate::config::CONFIG.test_bot,
-                    "Activated Paradise Protection Protocol",
+                    Some("Activated Paradise Protection Protocol"),
                 )
                 .await?;
-
+        
             ctx.say("Oh great work in denying this bo-!").await?;
 
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -99,7 +108,7 @@ pub async fn deny(ctx: Context<'_>, member: Member, reason: String) -> Result<()
 Oh well, good luck with the quiz: {}/onboarding/quiz/{}
                 ",
                 crate::config::CONFIG.panel_url,
-                onboarding_id
+                onboarding_id,
             ))
             .await?;
 
@@ -112,7 +121,7 @@ Oh well, good luck with the quiz: {}/onboarding/quiz/{}
 Visit {}/onboarding/quiz/{} to take the quiz!
                 ",
             crate::config::CONFIG.panel_url,
-            onboarding_id
+            onboarding_id,
         )
         .into()),
         _ => Err("Hmm... seems like you can't use this command yet!".into()), // TODO, remove

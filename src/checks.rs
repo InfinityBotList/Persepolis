@@ -38,10 +38,13 @@ pub async fn is_onboardable(ctx: Context<'_>) -> Result<bool, Error> {
     }
 
     let is_staff = {
-        let member = ctx
-            .serenity_context()
-            .cache
-            .member(config::CONFIG.servers.main, ctx.author().id);
+        let member = botox::cache::member_on_guild(
+            ctx,
+            config::CONFIG.servers.main,
+            ctx.author().id,
+            true,
+        )
+        .await?;
 
         if let Some(member) = member {
             member
@@ -132,7 +135,8 @@ If you accidentally left the onboarding server, you can rejoin using {}
             .guild_id
             .parse::<GuildId>()?;
 
-        delete_or_leave_guild(&ctx.data().cache_http, guild_id).await?;
+        let cache_http = botox::cache::CacheHttpImpl::from_ctx(ctx.serenity_context());
+        delete_or_leave_guild(&cache_http, guild_id).await?;
 
         // Delete onboarding
         sqlx::query!(
