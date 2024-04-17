@@ -8,6 +8,7 @@ use poise::serenity_prelude::{
 use poise::CreateReply;
 
 #[poise::command(
+    category = "Testing Commands",
     prefix_command,
     slash_command,
     check = "checks::is_onboardable",

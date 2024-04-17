@@ -12,12 +12,17 @@ use crate::Context;
 use crate::Error;
 
 #[poise::command(
+    category = "Testing Commands",
     prefix_command,
     slash_command,
     check = "checks::is_onboardable",
     check = "checks::setup_onboarding"
 )]
-pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
+pub async fn claim(
+    ctx: Context<'_>, 
+    #[description = "The bot you wish to claim"]
+    bot: Member
+) -> Result<(), Error> {
     let data = ctx.data();
 
     let Some(onboarding_id) = crate::setup::get_onboarding_id(&ctx).await? else {
@@ -36,7 +41,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
 
     match onboard_state {
         crate::states::OnboardState::Started => {
-            if member.user.id != crate::config::CONFIG.test_bot {
+            if bot.user.id != crate::config::CONFIG.test_bot {
                 ctx.send(
                     CreateReply::default()
                     .embed(
@@ -163,7 +168,7 @@ pub async fn claim(ctx: Context<'_>, member: Member) -> Result<(), Error> {
             Ok(())
         },
         crate::states::OnboardState::QueueRemindedReviewer => {
-            if member.user.id != crate::config::CONFIG.test_bot {
+            if bot.user.id != crate::config::CONFIG.test_bot {
                 ctx.send(
                     CreateReply::default()
                     .embed(

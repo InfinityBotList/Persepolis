@@ -7,12 +7,19 @@ use crate::Context;
 use crate::Error;
 
 #[poise::command(
+    category = "Testing Commands",
     prefix_command,
     slash_command,
     check = "checks::is_onboardable",
     check = "checks::setup_onboarding"
 )]
-pub async fn approve(ctx: Context<'_>, member: Member, reason: String) -> Result<(), Error> {
+pub async fn approve(
+    ctx: Context<'_>, 
+    #[description = "The bot you wish to approve"]
+    bot: Member, 
+    #[description = "The reason for approval"]
+    reason: String
+) -> Result<(), Error> {
     let data = ctx.data();
 
     let Some(onboarding_id) = crate::setup::get_onboarding_id(&ctx).await? else {
@@ -34,7 +41,7 @@ pub async fn approve(ctx: Context<'_>, member: Member, reason: String) -> Result
             Err(format!("Please run ``{}queue`` to get started!", ctx.prefix()).into())
         }
         crate::states::OnboardState::Claimed => {
-            if member.user.id != crate::config::CONFIG.test_bot {
+            if bot.user.id != crate::config::CONFIG.test_bot {
                 ctx.send(
                     CreateReply::default().embed(
                         CreateEmbed::default()

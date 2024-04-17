@@ -3,6 +3,7 @@ use crate::Context;
 use crate::Error;
 
 #[poise::command(
+    category = "Core",
     prefix_command,
     slash_command,
     check = "checks::is_onboardable",
