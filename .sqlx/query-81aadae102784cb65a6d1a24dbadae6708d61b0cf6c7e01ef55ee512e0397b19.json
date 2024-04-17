@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT short, invite FROM bots WHERE bot_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "short",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "invite",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "81aadae102784cb65a6d1a24dbadae6708d61b0cf6c7e01ef55ee512e0397b19"
+}

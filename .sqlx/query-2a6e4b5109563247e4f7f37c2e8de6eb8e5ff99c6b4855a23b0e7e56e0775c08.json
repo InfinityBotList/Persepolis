@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT state, guild_id, questions FROM staff_onboardings WHERE id = $1 AND user_id = $2 AND void = false",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "guild_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "questions",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "2a6e4b5109563247e4f7f37c2e8de6eb8e5ff99c6b4855a23b0e7e56e0775c08"
+}

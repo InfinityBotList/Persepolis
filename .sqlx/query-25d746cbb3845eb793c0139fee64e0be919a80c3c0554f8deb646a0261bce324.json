@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT verdict, questions, answers, created_at, finished_at, user_id FROM staff_onboardings WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "verdict",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 1,
+        "name": "questions",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "answers",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "finished_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "user_id",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "25d746cbb3845eb793c0139fee64e0be919a80c3c0554f8deb646a0261bce324"
+}

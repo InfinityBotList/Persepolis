@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE staff_onboardings SET questions = $1, answers = $2, state = $3 WHERE id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cdd8c2c9ebbe2fc1eaf48a0f1a33abc0623e7ec589c206bb75fc0ddb079c6109"
+}

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, guild_id FROM staff_onboardings WHERE user_id = $1 AND state = $2 AND NOW() - created_at < INTERVAL '3 hours' ORDER BY created_at DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "guild_id",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "5f9ab0dcf4ef48a3d8b95cb17676c6d4a5eb0f24ea1f95c72a0d9cdc62989ade"
+}
