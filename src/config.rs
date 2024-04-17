@@ -33,7 +33,7 @@ impl Default for Roles {
     fn default() -> Self {
         Self {
             awaiting_staff: RoleId::new(1029058929361174678),
-            main_server_web_moderator: RoleId::new(762371586434793472)
+            main_server_web_moderator: RoleId::new(1227728825836769320)
         }
     }
 }
