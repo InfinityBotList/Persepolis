@@ -8,7 +8,7 @@ use sqlx::types::chrono;
 
 use crate::{
     config,
-    setup::{delete_or_leave_guild, setup_guild},
+    setup::{delete_or_leave_guild, setup_guild, setup_readme},
     states, Context, Error, server::types::login::ConfirmLoginState,
 };
 
@@ -147,6 +147,9 @@ If you accidentally left the onboarding server, you can rejoin using {}
         .await?;
 
         setup_guild(ctx, &mut msg).await?;
+
+        setup_readme(&cache_http, guild_id)
+        .await?;
 
         return Ok(false);
     }

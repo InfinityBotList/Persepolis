@@ -227,7 +227,7 @@ async fn confirm_login(
             // Check that theyre not already on the server
             if member_on_guild(
                 &app_state.cache_http,
-                config::CONFIG.servers.main,
+                guild_id,
                 user.id,
                 false
             )
@@ -772,9 +772,9 @@ async fn submit_onboarding(
     crate::config::CONFIG.channels.onboarding_channel.say(
         &app_state.cache_http,
         format!(
-            "User <@{}> has submitted their onboarding quiz. Please see {}/admin/onboard/resp/{} to review it, then use the ``/admin approve/deny`` commands to approve or deny it.", 
+            "User <@{}> has submitted their onboarding quiz. Please see {}/onboarding/resp/{} to review it, then use the ``/admin approve/deny`` commands to approve or deny it.", 
             auth_data.user_id,
-            crate::config::CONFIG.frontend_url,
+            crate::config::CONFIG.panel_url,
             o_id
         )
     ).await.map_err(|_| Error::new("Could not send message on discord".to_string()))?;

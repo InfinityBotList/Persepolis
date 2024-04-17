@@ -107,14 +107,12 @@ pub async fn setup_readme(cache_http: &CacheHttpImpl, guild: GuildId) -> Result<
         for channel in guild_cache.channels.iter() {
             if channel.name == "readme" {
                 readme_channel = Some(channel.id);
-                break;
+                continue
             }
-        }
 
-        for channel in guild_cache.channels.iter() {
             if channel.name == "general" {
                 general_channel = Some(channel.id);
-                break;
+                continue
             }
         }
     }
@@ -126,7 +124,8 @@ pub async fn setup_readme(cache_http: &CacheHttpImpl, guild: GuildId) -> Result<
         let new_general_channel = guild
             .create_channel(
                 cache_http,
-                CreateChannel::new("general").topic("This is the general channel for the server."),
+                CreateChannel::new("general")
+                .topic("This is the general channel for the server."),
             )
             .await?;
 
