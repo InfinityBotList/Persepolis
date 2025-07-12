@@ -70,7 +70,7 @@ pub async fn setup_server(pool: PgPool, cache_http: CacheHttpImpl) {
                 .allow_headers(Any),
         );
 
-    let addr = "127.0.0.1:3011".parse().expect("Invalid server address");
+    let addr = "0.0.0.0:3011".parse().expect("Invalid server address");
 
     info!("Starting RPC server on {}", addr);
 
